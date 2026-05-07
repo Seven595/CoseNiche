@@ -1,0 +1,137 @@
+# CoseNiche 注意力分析配置
+
+# ============== 数据集配置 ==============
+dataset:
+  name: "PDAC"
+  
+  # 输入路径
+  base_dir: "/home/junning/projectnvme/ST/project-20-contrast-organ/Inference_embeddings/PDAC/PDAC_clsrecon_nosemantic_fintuneembedding_cls2genes_submodel"
+  h5ad_path: "/home/junning/projectnvme/ST/Data/PDAC/pdac.h5ad"
+  truth_path: "/home/junning/projectnvme/ST/Data/PDAC/PDAC_truth.csv"
+  vocab_path: "/home/junning/projectnvme/ST/Data/Get_Embedding/vocab.json"
+  
+  # 注意力数据文件名
+  ctx_genes_file: "context_genes.pkl"
+  attn_scores_file: "context_attention_scores.pkl"
+
+# ============== 分析参数 ==============
+analysis:
+  # 使用的注意力层
+  use_layer: 5
+  
+  # Top-K partner 基因数
+  top_k: 20
+  
+  # 用于富集分析的 top genes 数
+  top_n_for_enrichment: 100
+  
+  # 调试用的单 spot 索引
+  spot_idx_debug: 5
+
+# ============== 基因过滤规则 ==============
+gene_filtering:
+  # 是否过滤含点号或横杠的基因
+  drop_with_dot_or_dash: true
+  
+  # 前缀黑名单（步骤4）
+  extra_exclude_prefixes:
+    - "AC"
+    - "AL"
+    - "LINC"
+    - "RP"
+    - "SNOR"
+    - "SCARNA"
+  
+  # 自定义正则排除（步骤5，可选）
+  extra_exclude_regex: null
+  
+  # 白名单（步骤1，始终保留）
+  whitelist:
+    - "HLA-"
+    - "MIR"
+
+# ============== 输出设置 ==============
+output:
+  result_dir: "./result_output"
+  enrichment_dir: "./result_output/enrichment_prepared"
+  
+  # 子目录
+  cluster_dir: "hbrc_layer{layer}_clusters"
+  domain_tables_dir: "domain_tables"
+  
+  # 输出文件
+  summary_index: "clusters_summary_index.csv"
+  all_domains_top: "all_domains_top_partners.csv"
+
+# ============== 富集分析参数 ==============
+enrichment:
+  # 生物体
+  organism: "Human"
+  
+  # 富集数据库
+  libraries:
+    - "GO_Biological_Process_2023"
+    - "GO_Molecular_Function_2023"
+    - "GO_Cellular_Component_2023"
+    - "KEGG_2021_Human"
+    - "Reactome_2022"
+    - "WikiPathways_2023_Human"
+  
+  # 显著性阈值
+  adj_pval_cutoff: 0.05
+  
+  # 是否强制重新运行
+  force_rerun: false
+
+# ============== 可视化参数 ==============
+visualization:
+  # 气泡图
+  bubble_plot:
+    top_terms_per_domain: 10
+    max_terms_total: 30
+    figsize: [10, 12]
+    dpi: 300
+  
+  # 气泡图（基因）
+  gene_bubble:
+    top_n: 3  # 每个 domain 取 top 3 基因
+    figsize: [14, 9]
+    dpi: 300
+    cmap: "Reds"
+    min_size: 10
+    max_size: 300
+  
+  # 桑基图
+  sankey:
+    top_n: 50
+    adj_pval_cutoff: 0.05
+    min_gene_count: 2
+
+# ============== 单基因分析参数 ==============
+single_gene:
+  # 过滤参数
+  min_domains: 2
+  min_spots_per_domain: 3
+  min_expr: 0.1
+  
+  # 采样参数
+  n_samples_per_domain: 5
+  
+  # Top partners
+  top_k_partners: 100
+  
+  # 富集分析
+  enrichment_cutoff: 0.05
+
+# ============== 高级选项 ==============
+advanced:
+  # 并行处理
+  n_jobs: 1  # -1 表示使用所有核心
+  
+  # 缓存
+  use_cache: true
+  cache_dir: "./.cache"
+  
+  # 日志
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_file: "./analysis.log"

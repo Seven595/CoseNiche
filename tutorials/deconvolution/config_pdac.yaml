@@ -1,0 +1,183 @@
+# CoseNiche Deconvolution Configuration - PDAC Dataset
+#
+# This configuration uses relative paths from the project root.
+# Adjust paths according to your data location.
+
+# ============================================================================
+# Data Paths (relative to project root)
+# ============================================================================
+
+# Spatial transcriptomics data
+st_data: "../../Data/PDAC/pdac.h5ad"
+
+# Single-cell reference data  
+sc_data: "../../h5ad/PDAC_sc/GSE111672_scRNA_combined.h5ad"
+
+# CoseNiche embeddings (pre-computed)
+st_embeddings: "../../embeddings/PDAC_st/updated_embeddings.npy"
+sc_embeddings: "../../embeddings/PDAC_sc/updated_embeddings.npy"
+
+# Ground truth labels (optional, for evaluation)
+ground_truth_csv: "../../Data/PDAC/PDAC_truth.csv"
+ground_truth_column: "Region"
+
+
+# ============================================================================
+# Preprocessing Parameters
+# ============================================================================
+
+# Spatial data preprocessing
+st_preprocessing:
+  normalize_total: true
+  target_sum: 10000
+  log1p: true
+  highly_variable_genes: 3000
+  scale: true
+  scale_max_value: 10
+  scale_zero_center: false
+
+# Single-cell data preprocessing
+sc_preprocessing:
+  normalize_total: true
+  target_sum: 10000
+  log1p: true
+  scale: true
+  scale_max_value: 10
+  scale_zero_center: false
+
+# Cell type normalization (PDAC-specific)
+normalize_celltype: true  # Remove numeric suffixes like '.151'
+
+
+# ============================================================================
+# Deconvolution Parameters
+# ============================================================================
+
+# Spatial graph construction
+n_neighbors: 6  # Number of nearest neighbors
+neigh_key: "graph_neigh"
+adj_key: "adj"
+
+# Training parameters
+epochs: 2000
+lr: 0.005
+weight_decay: 0.0
+
+# Loss weights
+lam_recon: 100.0  # Reconstruction loss weight
+lam_contrast: 1.0  # Contrastive loss weight
+tau: 1.0  # Temperature parameter
+
+# Loss type: 'mse', 'cosine', 'correlation', or 'combined'
+loss_type: "mse"
+
+# Optimization
+seed: 41
+device: "cuda"  # 'cuda' or 'cpu'
+
+# Logging
+log_every: 10
+save_best: true
+verbose: true
+
+
+# ============================================================================
+# Output Settings
+# ============================================================================
+
+output_dir: "./results/PDAC"
+log_dir: "./results/PDAC/logs"
+
+# Output file names
+deconv_file: "deconvolution_result.h5ad"
+sc_file: "sc_reference.h5ad"
+
+# Keys for storing results in AnnData
+write_keys:
+  map_key: "map_matrix"
+  pred_key: "pred_embeddings"
+  celltype_prop_key: "cell_type_proportions"
+
+
+# ============================================================================
+# Visualization Parameters (for 2_plot_composition.py)
+# ============================================================================
+
+visualization:
+  # Output directory for plots
+  plot_output_dir: "./results/PDAC/plots"
+  
+  # Data processing
+  retain_percent: 0.1
+  n_markers_per_type: 3
+  
+  # Figure parameters
+  dpi: 300
+  figsize_heatmap: [7.2, 4.5]
+  figsize_umap: [3.5, 3.5]
+  figsize_pie: [3.5, 3.5]
+  figsize_stacked: [7.2, 3.5]
+  
+  # Font settings
+  font_family: "Arial"
+  font_tiny: 8
+  font_small: 9
+  font_medium: 10
+  font_large: 13
+  font_xlarge: 15
+  
+  # Color settings
+  cmap_heatmap: "RdYlBu_r"
+  cmap_domain: "tab10"
+  cmap_celltype: "tab20"
+  
+  # Domain order (for consistent plotting)
+  domain_order:
+    - "Tumor"
+    - "Stroma"
+    - "Normal"
+    - "Immune"
+  
+  # Plot types to generate
+  plot_types:
+    - bar
+    - pie
+    - spatial
+
+
+# ============================================================================
+# Evaluation Parameters
+# ============================================================================
+
+evaluation:
+  # Reconstruction quality metrics
+  compute_cosine_similarity: true
+  compute_per_spot_metrics: true
+  
+  # Sparsity analysis
+  sparsity_threshold: 0.001
+  dominant_celltype_threshold: 0.05
+
+
+# ============================================================================
+# Advanced Options
+# ============================================================================
+
+advanced:
+  # Mixed precision training
+  use_amp: false
+  
+  # Gradient clipping
+  grad_clip_norm: 1.0
+  
+  # Early stopping
+  early_stopping:
+    enabled: false
+    patience: 100
+    min_delta: 1e-5
+  
+  # Checkpoint saving
+  checkpoint:
+    enabled: false
+    save_every: 500
+    keep_last_n: 3

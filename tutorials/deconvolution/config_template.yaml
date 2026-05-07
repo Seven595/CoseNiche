@@ -1,0 +1,280 @@
+# ==============================================================================
+# CoseNiche Spatial Deconvolution Configuration Template
+# ==============================================================================
+#
+# This YAML file specifies all parameters for spatial transcriptomics 
+# deconvolution using CoseNiche foundation model embeddings.
+#
+# Usage:
+#   1. Copy this template: cp config_template.yaml config_mydata.yaml
+#   2. Edit paths and parameters for your dataset
+#   3. Run: python 1_deconvolution.py --config config_mydata.yaml
+#
+# Documentation: https://coseniche.readthedocs.io/deconvolution/
+# ==============================================================================
+
+# ==============================================================================
+# DATA PATHS
+# ==============================================================================
+# All paths can be absolute or relative to the project root directory
+
+# Spatial transcriptomics data (AnnData .h5ad format)
+# Required fields:
+#   - adata.obsm['spatial']: (n_spots, 2) spatial coordinates
+#   - adata.X: (n_spots, n_genes) expression matrix
+# Optional fields:
+#   - adata.obs['ground_truth']: true domain labels (for evaluation)
+st_data: "data/PDAC/pdac_spatial.h5ad"
+
+# Single-cell reference data (AnnData .h5ad format)
+# Required fields:
+#   - adata_sc.obs['cell_type']: cell type annotations
+#   - adata_sc.X: (n_cells, n_genes) expression matrix
+sc_data: "data/PDAC/pdac_sc_reference.h5ad"
+
+# Pre-computed CoseNiche embeddings (NumPy .npy format)
+# Shape: (n_spots, embedding_dim) for ST, (n_cells, embedding_dim) for SC
+# Note: Both embeddings must have the same embedding_dim
+st_embeddings: "embeddings/PDAC_st/updated_embeddings.npy"
+sc_embeddings: "embeddings/PDAC_sc/updated_embeddings.npy"
+
+# Output directory (will be created if doesn't exist)
+output_dir: "tutorials/deconvolution/results/PDAC"
+
+# Optional: Ground truth labels for evaluation (CSV format)
+# If provided, will compute accuracy metrics
+# truth_csv: "data/PDAC/ground_truth.csv"
+# truth_column: "Region"  # Column name containing domain labels
+
+
+# ==============================================================================
+# SPATIAL GRAPH CONSTRUCTION
+# ==============================================================================
+
+# Number of nearest neighbors for spatial graph
+# - Higher values (8-15): Smoother spatial patterns, more global context
+# - Lower values (3-6): Preserve local details, less smoothing
+# - Recommendation: Start with 6, increase if results are too noisy
+n_neighbors: 6
+
+
+# ==============================================================================
+# TRAINING PARAMETERS
+# ==============================================================================
+
+# Number of training epochs
+# - More epochs: Better convergence, longer training time
+# - Fewer epochs: Faster training, may underfit
+# - Recommendation: 2000 for typical datasets, 5000 for large/complex data
+# - Monitor loss curves to determine if more epochs are needed
+epochs: 2000
+
+# Learning rate for AdamW optimizer
+# - Higher lr (0.01): Faster convergence, may be unstable
+# - Lower lr (0.001): More stable, slower convergence
+# - Recommendation: Start with 0.005, reduce if training is unstable
+lr: 0.005
+
+# Weight decay (L2 regularization)
+# - 0.0: No regularization (default, usually sufficient)
+# - 1e-4 to 1e-3: Light regularization (use if overfitting occurs)
+# - Higher values may hurt performance
+weight_decay: 0.0
+
+
+# ==============================================================================
+# LOSS FUNCTION CONFIGURATION
+# ==============================================================================
+
+# Reconstruction loss weight
+# - Controls how strongly predicted embeddings match observed embeddings
+# - Higher values (200-500): Prioritize accurate reconstruction
+# - Lower values (50-100): Allow more flexibility for spatial constraints
+# - Recommendation: 100 for balanced results, increase if quality is poor
+lam_recon: 100.0
+
+# Contrastive loss weight  
+# - Controls spatial coherence (neighbors should have similar composition)
+# - Higher values (2-10): Enforce stronger spatial smoothness
+# - Lower values (0.1-1): Allow more heterogeneity
+# - Recommendation: 1.0 for typical tissue, increase for highly structured tissue
+lam_contrast: 1.0
+
+# Temperature for contrastive loss
+# - Controls discrimination strength in contrastive learning
+# - Lower tau (0.1-0.5): More discriminative, sharper boundaries
+# - Higher tau (1-2): More permissive, smoother boundaries  
+# - Recommendation: 1.0 for most cases
+tau: 1.0
+
+# Reconstruction loss type
+# Options:
+#   - "mse": Mean Squared Error (fast, stable, good default)
+#   - "cosine": Cosine similarity (emphasizes direction over magnitude)
+#   - "correlation": Pearson correlation (robust to scale differences)
+#   - "combined": Weighted combination of all three (best quality, slower)
+# Recommendation: Use "mse" for prototyping, "combined" for final results
+loss_type: "mse"
+
+
+# ==============================================================================
+# REPRODUCIBILITY
+# ==============================================================================
+
+# Random seed for reproducibility
+# - Set to any integer for deterministic results
+# - Different seeds may give slightly different results
+seed: 41
+
+# Device for computation
+# Options: "cuda", "cuda:0", "cuda:1", ..., "cpu"
+# - Use "cuda" or "cuda:0" if GPU available (5-10x faster)
+# - Use "cpu" for compatibility or if GPU out of memory
+device: "cuda"
+
+
+# ==============================================================================
+# LOGGING PARAMETERS
+# ==============================================================================
+
+# Logging interval (in epochs)
+# - Detailed statistics logged every N epochs
+# - Lower values (5-10): More frequent updates, slower training
+# - Higher values (20-50): Less verbose, minimal overhead
+log_every: 10
+
+# Verbose progress output
+# - true: Show tqdm progress bar with live metrics
+# - false: Minimal output, only final results
+verbose: true
+
+
+# ==============================================================================
+# PREPROCESSING PARAMETERS (Optional)
+# ==============================================================================
+# These parameters are applied if data hasn't been preprocessed
+
+# Spatial transcriptomics preprocessing
+st_preprocessing:
+  # Normalize total counts per spot
+  normalize_total: true
+  target_sum: 10000  # Standard Seurat/Scanpy default
+  
+  # Log transformation
+  log1p: true
+  
+  # Feature scaling
+  scale: true
+  scale_max_value: 10  # Clip to [-10, 10] after z-score
+
+# Single-cell reference preprocessing  
+sc_preprocessing:
+  normalize_total: true
+  target_sum: 10000
+  log1p: true
+  scale: true
+  scale_max_value: 10
+
+# Cell type name normalization
+# - For PDAC and similar datasets with suffixes like "T cell.151"
+# - Set to true to automatically remove ".XXX" suffixes
+normalize_celltype: true
+
+
+# ==============================================================================
+# VISUALIZATION PARAMETERS (for 2_plot_composition.py)
+# ==============================================================================
+
+visualization:
+  # Output directory for plots
+  plot_output_dir: "tutorials/deconvolution/results/PDAC/plots"
+  
+  # Resolution for saved figures
+  # - 300 DPI: High quality, suitable for most publications
+  # - 600 DPI: Very high quality, Nature/Science journals
+  # - 150 DPI: Lower quality, faster rendering for testing
+  dpi: 300
+  
+  # Plot types to generate
+  # Options: "bar", "pie", "spatial"
+  plot_types:
+    - bar      # Stacked bar charts per domain
+    - pie      # Pie charts showing average composition
+    - spatial  # Spatial pie plots on tissue coordinates
+  
+  # Spatial pie plot configuration
+  spatial_pie:
+    # Number of top cell types to show per spot (others grouped as "Other")
+    # - Higher values (10-15): More detail, cluttered
+    # - Lower values (5-8): Cleaner, less detail
+    top_k: 8
+    
+    # Plot entire tissue slice (not split by domain)
+    plot_full: true
+  
+  # Color palette
+  # Options: "nature" (color-blind friendly), "seaborn", "custom"
+  color_palette: "nature"
+  
+  # Font settings (Nature journal style)
+  font_family: "Arial"  # Fallback: Liberation Sans, DejaVu Sans
+  font_sizes:
+    tiny: 8    # Dense labels
+    small: 9   # Axis labels
+    medium: 10 # Standard text
+    large: 13  # Titles
+
+
+# ==============================================================================
+# ADVANCED PARAMETERS (Optional)
+# ==============================================================================
+# Uncomment and modify only if you need fine-grained control
+
+# advanced:
+#   # Gradient clipping (prevents exploding gradients)
+#   grad_clip_norm: 1.0
+#   
+#   # Automatic Mixed Precision training (faster on modern GPUs)
+#   use_amp: false
+#   
+#   # Checkpoint saving
+#   checkpoint:
+#     enabled: false
+#     save_every: 500  # Save checkpoint every N epochs
+#     keep_last_n: 3   # Keep only last N checkpoints
+#   
+#   # Early stopping
+#   early_stopping:
+#     enabled: false
+#     patience: 100       # Stop if no improvement for N epochs
+#     min_delta: 1e-4     # Minimum change to count as improvement
+#   
+#   # Validation split (for hyperparameter tuning)
+#   validation:
+#     enabled: false
+#     split_ratio: 0.2    # 20% of spots for validation
+#     metric: "cosine"    # Metric to optimize
+
+
+# ==============================================================================
+# NOTES AND RECOMMENDATIONS
+# ==============================================================================
+#
+# Quick Start:
+# 1. Update paths in "DATA PATHS" section
+# 2. Start with default parameters
+# 3. Run deconvolution and check loss curves
+# 4. Adjust parameters if needed (see troubleshooting in README)
+#
+# Parameter Tuning Guide:
+# - If training unstable (NaN/Inf): Reduce lr to 0.001, change loss_type to "cosine"
+# - If poor reconstruction: Increase epochs to 5000, lam_recon to 200, loss_type to "combined"
+# - If too smooth: Reduce n_neighbors to 3, lam_contrast to 0.5
+# - If too noisy: Increase n_neighbors to 10, lam_contrast to 2.0
+#
+# For More Help:
+# - Documentation: https://coseniche.readthedocs.io/
+# - Tutorials: ../README.md
+# - Issues: https://github.com/yourusername/CoseNiche/issues
+#
+# ==============================================================================
