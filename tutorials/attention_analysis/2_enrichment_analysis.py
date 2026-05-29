@@ -515,7 +515,7 @@ def create_enrichment_dotplot(
 
 
 # =========================
-# 单个Domain的条形图（按Library颜色区分）
+# single Domain of plot (by Library)
 # =========================
 def create_domain_enrichment_barplot(
     domain: str,
@@ -541,25 +541,25 @@ def create_domain_enrichment_barplot(
         figsize: Figure size
         dpi: Resolution
     """
-    # 按p值筛选
+    # by pfilter
     df_sig = df[df["adj_pval"] <= adj_pval_cutoff].copy()
     
     if df_sig.empty:
         print(f"[WARN] No significant terms for {domain}")
         return
     
-    # 计算-log10 p-value（如果不存在）
+    # compute-log10 p-value (if in)
     if 'neg_log10_pval' not in df_sig.columns:
         df_sig['neg_log10_pval'] = -np.log10(df_sig['adj_pval'].clip(lower=1e-300))
     
-    # 获取唯一的libraries，按ENRICH_LIBRARIES顺序排序
+    # of libraries, by ENRICH_LIBRARIES
     available_libraries = df_sig['Library'].unique()
-    # 按ENRICH_LIBRARIES顺序排列libraries
+    # by ENRICH_LIBRARIEScolumnlibraries
     library_order = [lib for lib in ENRICH_LIBRARIES if lib in available_libraries]
-    # 将不在ENRICH_LIBRARIES中的library添加到末尾
+    # in ENRICH_LIBRARIES in of library to
     library_order.extend([lib for lib in available_libraries if lib not in library_order])
     
-    # 准备绘图数据：按library分组，每个library内部按neg_log10_pval排序
+    # plot: by library, each library by neg_log10_pval
     plot_rows = []
     y_positions = []
     y_labels = []
@@ -569,16 +569,16 @@ def create_domain_enrichment_barplot(
     for library in library_order:
         library_data = df_sig[df_sig['Library'] == library].copy()
         
-        # 按neg_log10_pval降序排序（最显著的在前）
+        # by neg_log10_pval (of in before)
         library_data = library_data.sort_values('neg_log10_pval', ascending=False)
         
-        # 取该library的前N个terms
+        # library of before N terms
         library_data = library_data.head(top_terms_per_library)
         
         if len(library_data) == 0:
             continue
         
-        # 添加该library的所有entries
+        # library of all entries
         for idx, row in library_data.iterrows():
             plot_rows.append({
                 'y_pos': current_y,
@@ -589,7 +589,7 @@ def create_domain_enrichment_barplot(
                 'gene_ratio': row['gene_ratio']
             })
             
-            # 所有terms都显示标签
+            # all terms
             y_labels.append(row['term_clean'])
             y_ticks.append(current_y)
             current_y += 1
@@ -600,23 +600,23 @@ def create_domain_enrichment_barplot(
     
     plot_df = pd.DataFrame(plot_rows)
     
-    # 创建图形
+    # createplot
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     
-    # 根据library获取颜色
+    # library
     bar_colors = [LIBRARY_COLORS.get(lib, '#808080') for lib in plot_df['library']]
     
-    # 创建水平条形图（完全无间隙）
-    # 关键：y_pos是连续整数(0,1,2,...)，设置height=1.0确保bars完全填充，无任何间隙
-    # 注意：bar_height参数保留但不使用，因为要确保无间隙必须使用height=1.0
-    bar_height = 0.6  # 此参数保留用于文档说明，但实际使用1.0确保无间隙
+    # createplot ()
+    # :y_pos(0,1,2,...),height=1.0bars,
+    # :bar_heightparametersnot used, for height=1.0
+    bar_height = 0.6  # parameters for description,actual1.0
     
-    # 逐个绘制bar，使用height=1.0确保完全无间隙
+    # plotbar,height=1.0
     for idx, row in plot_df.iterrows():
         ax.barh(
             row['y_pos'],
             row['neg_log10_pval'],
-            height=1.0,  # 固定为1.0以确保bars完全填充y轴单位空间，无任何间隙
+            height=1.0,  # for 1.0barsy,
             left=0,
             color=bar_colors[idx],
             edgecolor='white',
@@ -625,44 +625,44 @@ def create_domain_enrichment_barplot(
             align='center'
         )
     
-    # 设置Y轴标签
+    # Y
     ax.set_yticks(y_ticks)
     ax.set_yticklabels(y_labels, fontsize=9)
     
-    # 设置X轴
+    # X
     ax.set_xlabel('-log$_{10}$(Adjusted P-value)', fontsize=12, fontweight='bold')
     ax.tick_params(axis='x', labelsize=10)
     ax.set_xlim(left=0, right=plot_df['neg_log10_pval'].max() * 1.1)
  
-    # 设置标题
+    # Note.
     ax.set_title(f"Enrichment Analysis - {domain}", fontsize=14, fontweight='bold', pad=20)
     
-    # 移除边框
+    # Note.
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     # ax.spines['left'].set_visible(False)
     ax.spines['left'].set_linewidth(1.5)
     ax.spines['bottom'].set_linewidth(1.5)
     
-    # 创建libraries图例
+    # createlibrariesplot
     unique_libraries = plot_df['library'].unique()
     legend_elements = []
     for lib in library_order:
         if lib in unique_libraries:
             color = LIBRARY_COLORS.get(lib, '#808080')
-            # 简化library名称用于图例
+            # library for plot
             lib_name = lib.replace('_2023', '').replace('_2021', '').replace('_2022', '').replace('_Human', '').replace('_', ' ')
             legend_elements.append(mpatches.Patch(facecolor=color, edgecolor='black', label=lib_name, linewidth=0.5))
     
-    # 智能选择legend位置：检查右下角是否有足够空间
-    # 计算右侧bars的最大值，如果太短则将legend放在右上角或外部
+    # select legend:Check
+    # computebars of, if legend in or
     max_pval = plot_df['neg_log10_pval'].max()
-    # 如果bars普遍较短（最大值小于阈值），将legend放在外部或上方
-    if max_pval < 5:  # 如果最大-log10(p-value) < 5，说明bars较短
+    # if bars (),legend in or
+    if max_pval < 5:  # if -log10(p-value) < 5,Descriptionbars
         legend_loc = 'upper right'
         bbox_to_anchor = None
     else:
-        # bars较长时，放在右下角内部
+        # bars, in
         legend_loc = 'lower right'
         bbox_to_anchor = None
     
@@ -670,21 +670,21 @@ def create_domain_enrichment_barplot(
              fontsize=9, frameon=True, framealpha=0.95, edgecolor='black', 
              title='Enrichment Library', title_fontsize=10)
     
-    # 设置Y轴范围以适配所有bars
+    # Y all bars
     ax.set_ylim(-0.5, len(plot_df) - 0.5)
     ax.invert_yaxis()
     
-    # 紧凑布局
+    # Note.
     plt.tight_layout()
     
-    # 保存图片
+    # Saveplot
     plt.savefig(output_path, dpi=dpi, bbox_inches='tight', facecolor='white')
     
     plt.close()
 
 
 # =========================
-# 单个Domain的点图
+#  single Domain of dot plot
 # =========================
 # def create_domain_enrichment_dotplot(
 #     domain: str,
@@ -710,34 +710,34 @@ def create_domain_enrichment_barplot(
 #         figsize: Figure size
 #         dpi: Resolution
 #     """
-#     # 按p值筛选
+# # by pfilter
 #     df_sig = df[df["adj_pval"] <= adj_pval_cutoff].copy()
     
 #     if df_sig.empty:
 #         print(f"[WARN] No significant terms for {domain}")
 #         return
     
-#     # 计算-log10 p-value（如果不存在）
+# # compute-log10 p-value (if in)
 #     if 'neg_log10_pval' not in df_sig.columns:
 #         df_sig['neg_log10_pval'] = -np.log10(df_sig['adj_pval'].clip(lower=1e-300))
     
-#     # 获取唯一的libraries，按ENRICH_LIBRARIES顺序排序
+# # of libraries, by ENRICH_LIBRARIES
 #     available_libraries = df_sig['Library'].unique()
 #     library_order = [lib for lib in ENRICH_LIBRARIES if lib in available_libraries]
 #     library_order.extend([lib for lib in available_libraries if lib not in library_order])
     
-#     # 准备绘图数据：按library分组，每个library内部排序
+# # plot: by library, each library
 #     plot_rows = []
 #     y_pos = 0
-#     library_ranges = []  # 存储(start, end, library)用于背景颜色
+# library_ranges = [] # (start, end, library) for
     
 #     for library in library_order:
 #         library_data = df_sig[df_sig['Library'] == library].copy()
         
-#         # 按neg_log10_pval降序排序（最显著的在前）
+# # by neg_log10_pval (of in before)
 #         library_data = library_data.sort_values('neg_log10_pval', ascending=False)
         
-#         # 取该library的前N个terms
+# # library of before N terms
 #         library_data = library_data.head(top_terms_per_library)
         
 #         if len(library_data) == 0:
@@ -745,7 +745,7 @@ def create_domain_enrichment_barplot(
         
 #         start_pos = y_pos
         
-#         # 添加该library的所有entries
+# # library of all entries
 #         for idx, row in library_data.iterrows():
 #             plot_rows.append({
 #                 'y_pos': y_pos,
@@ -757,7 +757,7 @@ def create_domain_enrichment_barplot(
 #             })
 #             y_pos += 1
         
-#         # 存储该library的范围
+# # library of
 #         library_ranges.append((start_pos, y_pos - 1, library))
     
 #     if not plot_rows:
@@ -767,10 +767,10 @@ def create_domain_enrichment_barplot(
 #     df_plot = pd.DataFrame(plot_rows)
 #     df_plot = df_plot.reset_index(drop=True)
     
-#     # 创建图形
+# # createplot
 #     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     
-#     # 为每个library组添加背景颜色
+# # for each library
 #     library_bg_colors = {
 #         'GO_Biological_Process_2023': '#D9D9D9',
 #         'GO_Cellular_Component_2023': '#FFFFFF',
@@ -784,7 +784,7 @@ def create_domain_enrichment_barplot(
 #         bg_color = library_bg_colors.get(library, '#F8F8F8')
 #         ax.axhspan(start - 0.5, end + 0.5, facecolor=bg_color, alpha=0.3, zorder=0)
     
-#     # 定义颜色映射（白色 -> 橙色 -> 红色用于p值）
+# # (-> -> for p)
 #     colors_pval = ['#FFF5F0', '#FEE0D2', '#FCBBA1', '#FC9272', '#FB6A4A', 
 #                    '#EF3B2C', '#CB181D', '#A50F15', '#67000D']
    
@@ -792,13 +792,13 @@ def create_domain_enrichment_barplot(
 #                       '#AA7BC0', '#9459B0', '#7E3BA0', '#682D8F', '#52237E']
 #     cmap = LinearSegmentedColormap.from_list('deep_purple', colors_deep_purple)
     
-#     # 标准化颜色范围
+# Note.
 #     norm = Normalize(
 #         vmin=df_plot["neg_log10_pval"].min(),
 #         vmax=df_plot["neg_log10_pval"].max()
 #     )
     
-#     # 创建散点图
+# # createdot plot
 #     scatter = ax.scatter(
 #         df_plot["gene_ratio"],
 #         df_plot["y_pos"],
@@ -812,36 +812,36 @@ def create_domain_enrichment_barplot(
 #         zorder=3
 #     )
     
-#     # 设置Y轴标签
+# # Y
 #     ax.set_yticks(df_plot["y_pos"])
 #     ax.set_yticklabels(df_plot["term_clean"], fontsize=9)
     
-#     # 设置X轴
+# # X
 #     ax.set_xlabel("Gene Ratio", fontsize=12, fontweight='bold')
 #     ax.set_xlim(left=0, right=df_plot["gene_ratio"].max() * 1.1)
 #     ax.tick_params(axis='x', labelsize=10)
     
-#     # 添加网格
+# Note.
 #     ax.grid(axis='x', alpha=0.3, linestyle='--', linewidth=0.5, zorder=0)
 #     ax.set_axisbelow(True)
     
-#     # 移除边框
+# Note.
 #     ax.spines['top'].set_visible(False)
 #     ax.spines['right'].set_visible(False)
 #     ax.spines['left'].set_linewidth(1.5)
 #     ax.spines['bottom'].set_linewidth(1.5)
     
-#     # 添加标题
+# Note.
 #     ax.set_title(f"Enrichment Analysis - {domain}", fontsize=14, fontweight='bold', pad=20)
     
-#     # 添加颜色条
+# Note.
 #     cbar = plt.colorbar(scatter, ax=ax, pad=0.02, aspect=30)
 #     cbar.set_label('-log$_{10}$(Adjusted P-value)', 
 #                    fontsize=11, fontweight='bold', rotation=270, labelpad=20)
 #     cbar.ax.tick_params(labelsize=9)
 #     cbar.outline.set_linewidth(1.5)
     
-#     # 添加基因数量图例
+# # number of genesplot
 #     gene_counts = [5, 10, 20]
 #     legend_elements = []
 #     for gc in gene_counts:
@@ -864,10 +864,10 @@ def create_domain_enrichment_barplot(
 #     )
 #     legend.get_frame().set_linewidth(1.5)
     
-#     # 紧凑布局
+# Note.
 #     plt.tight_layout()
     
-#     # 保存图片
+# # Saveplot
 #     plt.savefig(output_path, dpi=dpi, bbox_inches='tight', facecolor='white')
     
 #     plt.close()
@@ -898,49 +898,49 @@ def create_domain_enrichment_dotplot(
         figsize: Figure size
         dpi: Resolution
     """
-    # 按p值筛选
+    # by pfilter
     df_sig = df[df["adj_pval"] <= adj_pval_cutoff].copy()
     
     if df_sig.empty:
         print(f"[WARN] No significant terms for {domain}")
         return
     
-    # 计算-log10 p-value（如果不存在）
+    # compute-log10 p-value (if in)
     if 'neg_log10_pval' not in df_sig.columns:
         df_sig['neg_log10_pval'] = -np.log10(df_sig['adj_pval'].clip(lower=1e-300))
     
-    # 获取唯一的libraries，按ENRICH_LIBRARIES顺序排序
+    # of libraries, by ENRICH_LIBRARIES
     available_libraries = df_sig['Library'].unique()
     library_order = [lib for lib in ENRICH_LIBRARIES if lib in available_libraries]
     library_order.extend([lib for lib in available_libraries if lib not in library_order])
     
-    # 准备绘图数据：按library分组，每个library内部排序
-    # 准备绘图数据：按library分组，每个library内部排序
+    # plot: by library, each library
+    # plot: by library, each library
     plot_rows = []
     y_pos = 0
-    library_ranges = []  # 存储(start, end, library)用于背景颜色
-    gap_size = 0  # 设置library之间的间隔行数
+    library_ranges = []  # (start, end, library) for
+    gap_size = 0  # library of rows
 
     for i, library in enumerate(library_order):
         library_data = df_sig[df_sig['Library'] == library].copy()
         
-        # 按neg_log10_pval降序排序（最显著的在前）
+        # by neg_log10_pval (of in before)
         library_data = library_data.sort_values('neg_log10_pval', ascending=False)
         
-        # 取该library的前N个terms
+        # library of before N terms
         # library_data = library_data.head(top_terms_per_library)
         library_data = library_data.head(8)
         
         if len(library_data) == 0:
             continue
         
-        # 如果不是第一个library，添加间隔
+        # if library,
         if i > 0 and len(plot_rows) > 0:
             y_pos += gap_size
         
         start_pos = y_pos
         
-        # 添加该library的所有entries
+        # library of all entries
         for idx, row in library_data.iterrows():
             plot_rows.append({
                 'y_pos': y_pos,
@@ -952,7 +952,7 @@ def create_domain_enrichment_dotplot(
             })
             y_pos += 1
         
-        # 存储该library的范围
+        # library of
         library_ranges.append((start_pos, y_pos - 1, library))
     
     if not plot_rows:
@@ -962,18 +962,18 @@ def create_domain_enrichment_dotplot(
     df_plot = pd.DataFrame(plot_rows)
     df_plot = df_plot.reset_index(drop=True)
     
-    # 创建图形 - 使用GridSpec来添加左侧色块
+    # createplot - Grid Spec
     from matplotlib.gridspec import GridSpec
     
     fig = plt.figure(figsize=(10,22), dpi=dpi)
     gs = GridSpec(1, 2, width_ratios=[0.03, 1], wspace=0.02, figure=fig)
     
-    # 左侧色块axis
+    # axis
     ax_colors = fig.add_subplot(gs[0])
-    # 主图axis
+    # plotaxis
     ax = fig.add_subplot(gs[1])
     
-    # 定义每个library的颜色（类似参考图）
+    # each library of (plot)
     library_colors = {
         'GO_Biological_Process_2023': '#fbad91',  # Orange
         'GO_Cellular_Component_2023': '#CAC8E1',  # Green
@@ -983,7 +983,7 @@ def create_domain_enrichment_dotplot(
         'WikiPathways_2019_Human': '#C00000', 
     }
     
-    # 在左侧ax_colors上绘制色块
+    # in ax_colorsplot
     # for start, end, library in library_ranges:
     #     color = library_colors.get(library, '#CCCCCC')
     #     ax_colors.barh(
@@ -998,8 +998,8 @@ def create_domain_enrichment_dotplot(
     for start, end, library in library_ranges:
         color = library_colors.get(library, '#CCCCCC')
         ax_colors.axhspan(
-            ymin=start - 0.5,      # 起始位置
-            ymax=end + 0.5,        # 结束位置
+            ymin=start - 0.5,      # Note.
+            ymax=end + 0.5,        # End
             xmin=0,
             xmax=1,
             facecolor=color,
@@ -1007,25 +1007,25 @@ def create_domain_enrichment_dotplot(
             alpha=1
         )   
     
-    # 设置左侧色块axis
+    # axis
     ax_colors.set_xlim(0, 10)
     ax_colors.set_ylim(-0.5, len(df_plot) - 0.5)
     ax_colors.axis('off')
     
 
     
-    # 定义颜色映射
+    # Note.
     colors_deep_purple = ['#FFFFFF', '#E8DDF0', '#D4BFE1', '#BF9DD1',
                           '#AA7BC0', '#9459B0', '#7E3BA0', '#682D8F', '#52237E']
     cmap = LinearSegmentedColormap.from_list('deep_purple', colors_deep_purple)
     
-    # 标准化颜色范围
+    # Note.
     norm = Normalize(
         vmin=df_plot["neg_log10_pval"].min(),
         vmax=df_plot["neg_log10_pval"].max()
     )
     
-    # 创建散点图
+    # createdot plot
     scatter = ax.scatter(
         df_plot["gene_ratio"],
         df_plot["y_pos"],
@@ -1039,43 +1039,43 @@ def create_domain_enrichment_dotplot(
         zorder=3
     )
     
-    # 设置Y轴标签
+    # Y
     ax.set_yticks(df_plot["y_pos"])
     ax.set_yticklabels(df_plot["term_clean"], fontsize=28)
-    ax.tick_params(axis='y', which='major', pad=25,  length=0)  # 增加padding
+    ax.tick_params(axis='y', which='major', pad=25,  length=0)  # padding
     
-    # 设置X轴
+    # X
     # ax.set_xlabel("Gene Count  ", fontsize=18)
     ax.set_xlim(left=0, right=df_plot["gene_ratio"].max() * 1.1)
     ax.tick_params(axis='x', labelsize=28)
     
-    # 添加网格
+    # Note.
     ax.grid(axis='x', alpha=0.3, linestyle='--', linewidth=0.5, zorder=0)
     ax.set_axisbelow(True)
     
-    # 移除边框
+    # Note.
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_linewidth(1.5)
     ax.spines['bottom'].set_linewidth(1.5)
     
-    # 添加标题
+    # Note.
     ax.set_title(f"{domain}", fontsize=40,  pad=20)
     
-    # 添加颜色条
+    # Note.
     cbar = plt.colorbar(scatter, ax=ax, pad=0.02, aspect=30)
     cbar.set_label('-log$_{10}$(Adjusted P-value)', 
                    fontsize=28,  rotation=270, labelpad=40)
     cbar.ax.tick_params(labelsize=20)
     cbar.outline.set_linewidth(1.5)
     
-    # 添加基因数量图例
+    # number of genesplot
     gene_counts = [10, 30, 50]
     legend_elements = []
     for gc in gene_counts:
         legend_elements.append(
             plt.Line2D([0], [0], marker='o', color='w', 
-                    markerfacecolor='gray', markersize=np.sqrt(gc * 30 / np.pi),  # 从20改为50，与散点图保持一致
+                    markerfacecolor='gray', markersize=np.sqrt(gc * 30 / np.pi),  # from 20 for 50, and dot plot
                     label=f'{gc}', markeredgecolor='black', markeredgewidth=0.5, alpha=0.6)
         )
     
@@ -1092,13 +1092,13 @@ def create_domain_enrichment_dotplot(
     )
     legend.get_frame().set_linewidth(1.5)
     
-    # 添加library颜色图例
+    # libraryplot
     library_legend_elements = []
-    # 只为实际使用的library创建图例
+    # for actual of librarycreateplot
     used_libraries = [lib for _, _, lib in library_ranges]
-    for library in dict.fromkeys(used_libraries):  # 保持顺序并去重
+    for library in dict.fromkeys(used_libraries):  # Note.
         color = library_colors.get(library, '#CCCCCC')
-        # 清理library名称，使其更易读
+        # library,
         display_name = library.replace('_', ' ').replace('2023', '').replace('2021', '').replace('2022', '').replace('2019', '').strip()
         library_legend_elements.append(
             plt.Line2D([0], [0], marker='s', color='w',
@@ -1106,11 +1106,11 @@ def create_domain_enrichment_dotplot(
                     label=display_name, markeredgecolor='none')
         )
 
-    # 创建第二个图例（library图例）
+    # create plot (libraryplot)
     library_legend = ax.legend(
         handles=library_legend_elements,
         title='Library',
-        loc='upper right',  # 放在右上角
+        loc='upper right',  # in
         frameon=True,
         fontsize=20,
         title_fontsize=20,
@@ -1120,13 +1120,13 @@ def create_domain_enrichment_dotplot(
     )
     library_legend.get_frame().set_linewidth(1.5)
 
-    # 重要：添加第一个图例回图中（因为第二个图例会覆盖第一个）
+    # : plotplot in (for plot)
     ax.add_artist(legend)
 
-    # 紧凑布局
+    # Note.
     plt.tight_layout()
     
-    # 保存图片
+    # Saveplot
     plt.savefig(output_path, dpi=dpi, bbox_inches='tight', facecolor='white')
     
     plt.close()

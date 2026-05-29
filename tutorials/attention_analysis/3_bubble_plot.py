@@ -64,14 +64,14 @@ def pick_global_x_set_from_domain_top3(df_all: pd.DataFrame, top_n: int = 3) -> 
     per_dom_top = {}
     x_set = []
     
-    # 第一步：获取每个domain的top_n基因
+    # : each domain of top_ngene
     for dom, sub in df_all.groupby("domain", sort=False):
         sub_sorted = sub.sort_values(["avg_strength", "hit_spots"], ascending=[False, False])
         genes = sub_sorted["partner_symbol"].astype(str).head(top_n).tolist()
         per_dom_top[dom] = genes
         x_set.extend(genes)
     
-    # 第二步：去重形成全局并集
+    # :
     seen = set()
     x_order = []
     for g in x_set:
@@ -79,55 +79,44 @@ def pick_global_x_set_from_domain_top3(df_all: pd.DataFrame, top_n: int = 3) -> 
             seen.add(g)
             x_order.append(g)
     
-    # 第三步：随机打乱顺序
+    # : random
     global_ordered = x_order.copy()
     random.shuffle(global_ordered)
     
-    # 第四步：为每个domain筛选出既在top_n中又在全局并集中的基因
+    # : for each domainfilter in top_n in in in of gene
     per_dom_filtered = {}
     for dom, top_genes in per_dom_top.items():
-        # 取交集：该domain的top基因 ∩ 全局并集
+        # :domain of topgene ∩
         filtered_genes = [g for g in top_genes if g in global_ordered]
         per_dom_filtered[dom] = filtered_genes
     
     return per_dom_filtered, global_ordered
 
 def build_plot_matrix_per_domain(df_all: pd.DataFrame, per_domain_genes: dict, global_ordered_genes: list) -> pd.DataFrame:
-    """
-    为每个domain构建只包含其top基因的绘图矩阵。
-    每个domain只显示自己的top基因，但x轴位置按全局基因顺序排列。
-    
-    Args:
-        df_all: 原始数据
-        per_domain_genes: 每个domain的top基因字典 {domain: [genes]}
-        global_ordered_genes: 全局排序的基因列表
-    
-    Returns:
-        DataFrame: columns = [domain, partner_symbol, avg_strength, hit_spots, x_position]
-    """
+    """ for each domainbuildcontainstop gene of plot. each domain of top gene,x by genecolumn. Args: df_all: per_domain_genes: each domain of top gene {domain: [genes]} global_ordered_genes: of gene list Returns: Data Frame: columns = [domain, partner_symbol, avg_strength, hit_spots, x_position] """
     plot_data = []
     
-    # 创建全局基因到x位置的映射
+    # creategene to x of
     gene_to_x = {gene: i for i, gene in enumerate(global_ordered_genes)}
     
     for domain, genes in per_domain_genes.items():
-        # 获取该domain的数据
+        # domain of
         domain_data = df_all[df_all["domain"] == domain].copy()
         
-        # 只保留该domain的top基因
+        # domain of topgene
         domain_top = domain_data[domain_data["partner_symbol"].isin(genes)].copy()
         
-        # 聚合（防重）
+        # aggregation ()
         domain_top = (domain_top.groupby(["domain", "partner_symbol"], as_index=False)
                       .agg(avg_strength=("avg_strength", "max"),
                            hit_spots=("hit_spots", "max")))
         
-        # 按全局基因顺序排列
+        # by genecolumn
         domain_top["partner_symbol"] = pd.Categorical(domain_top["partner_symbol"], 
                                                     categories=global_ordered_genes, ordered=True)
         domain_top = domain_top.sort_values("partner_symbol")
         
-        # 添加x轴位置信息（按全局顺序）
+        # x (by)
         domain_top["x_position"] = domain_top["partner_symbol"].map(gene_to_x)
         
         plot_data.append(domain_top)
@@ -135,18 +124,14 @@ def build_plot_matrix_per_domain(df_all: pd.DataFrame, per_domain_genes: dict, g
     return pd.concat(plot_data, ignore_index=True)
 
 def build_plot_matrix(df_all: pd.DataFrame, x_genes: list) -> pd.DataFrame:
-    """
-    行：domain；列：x_genes；值：两列 avg_strength 和 hit_spots。
-    返回一个长表，便于绘图：columns = [domain, partner_symbol, avg_strength, hit_spots]
-    对于缺失项填充为 NaN，再在绘图时处理为 0 大小和透明。
-    """
-    # 只保留 x_genes
+    """ rows:domain;column:x_genes;:column avg_strength and hit_spots. table,plot:columns = [domain, partner_symbol, avg_strength, hit_spots] Missing for Na N, in plotprocessing for 0 size and. """
+    # x_genes
     df = df_all[df_all["partner_symbol"].isin(x_genes)].copy()
-    # 聚合（防重），选择 avg_strength 最大的记录（理论上同一 domain-partner 应唯一）
+    # aggregation (), select avg_strength of (domain-partner)
     df = (df.groupby(["domain", "partner_symbol"], as_index=False)
             .agg(avg_strength=("avg_strength", "max"),
                  hit_spots=("hit_spots", "max")))
-    # 确保域×基因的全组合
+    # ×gene of
     domains = df["domain"].unique().tolist()
     idx = pd.MultiIndex.from_product([domains, x_genes], names=["domain", "partner_symbol"])
     df_full = df.set_index(["domain", "partner_symbol"]).reindex(idx).reset_index()
@@ -187,14 +172,14 @@ def plot_bubble_per_domain(df_long: pd.DataFrame,
         - Bubble size represents hit_spots (number of observations)
         - Bubble color represents avg_strength (average signal strength)
     """
-    # 排序domain：按domain名称
+    # domain: by domain
     doms = sorted(df_long["domain"].dropna().unique().tolist())
     
-    # 尺度映射
+    # Note.
     hs = df_long["hit_spots"].astype(float)
     av = df_long["avg_strength"].astype(float)
 
-    # 大小映射（线性）
+    # size ()
     hs_valid = hs.fillna(0.0)
     if hs_valid.max() == hs_valid.min():
         sizes = np.where(hs_valid > 0, (min_size + max_size) / 2.0, 0 if size_floor_zero else min_size)
@@ -204,9 +189,9 @@ def plot_bubble_per_domain(df_long: pd.DataFrame,
         if size_floor_zero:
             sizes = np.where(hs_valid > 0, sizes, 0)
 
-    # Nature期刊风格颜色映射（使用红色系）
+    # Nature ()
     if cmap_name == "Reds" or cmap_name == "custom_reds":
-        # 自定义红色渐变（白色->橙色->红色->深红色）
+        # (->->->)
         colors_pval = ['#FFF5F0', '#FEE0D2', '#FCBBA1', '#FC9272', '#FB6A4A', 
                        '#EF3B2C', '#CB181D', '#A50F15', '#67000D']
         cmap = LinearSegmentedColormap.from_list('custom_reds', colors_pval)
@@ -221,65 +206,65 @@ def plot_bubble_per_domain(df_long: pd.DataFrame,
     norm = Normalize(vmin=vmin, vmax=vmax)
     colors = [cmap(norm(v)) if np.isfinite(v) else (0,0,0,0) for v in av_valid]
 
-    # 坐标网格 - 使用全局基因顺序
+    # - gene
     dom_to_y = {d: i for i, d in enumerate(doms)}
     ys = df_long["domain"].map(dom_to_y).astype(float).values
     
-    # x坐标直接使用全局位置
+    # x
     xs = df_long["x_position"].astype(float).values * x_spacing
 
-    # 图尺寸：根据domain数动态扩展高度（除非固定尺寸）
+    # plot:domain ()
     if not fixed_size and isinstance(figsize, tuple) and len(figsize) == 2 and figsize[1] == 0.6:
         height = max(3.0, 0.6 * max(1, len(doms)))
         figsize = (figsize[0], height)
 
-    # 创建图形
+    # createplot
     # fig, ax = plt.subplots(figsize=(16, 7), dpi=dpi) # PDAC
     fig, ax = plt.subplots(figsize=(20, 7), dpi=dpi)    #HBRC
-    # 绘制散点图（使用黑色边缘以增强视觉效果）
+    # plotdot plot ()
     sc = ax.scatter(xs, ys, s=sizes, c=colors, marker="o", 
                    edgecolors="black", linewidths=0.7, alpha=0.9, zorder=3)
 
-    # Y轴设置
+    # Y
     ax.set_yticks(range(len(doms)))
     ax.set_yticklabels(doms, fontsize=16, fontweight='normal')
     ax.set_ylabel("", fontsize=18, fontweight='bold')
     
-    # X轴设置 - 使用全局基因顺序
+    # X - gene
     ax.set_xticks([i * x_spacing for i in range(len(global_ordered_genes))])
     ax.set_xticklabels(global_ordered_genes, rotation=45, ha="right", fontsize=12, 
-                      fontstyle='italic')  # 基因名用斜体（Nature风格）
+                      fontstyle='italic')  # gene (Nature)
     ax.set_xlabel(" ", fontsize=14, fontweight='bold')
 
-    # 标题
+    # Note.
     ax.set_title(title, fontsize=26, fontweight='bold', pad=20)
     
-    # 添加网格（淡色背景网格）
+    # ()
     # ax.grid(True, axis='x', linestyle='--', alpha=0.3, linewidth=0.5, zorder=0)
     ax.set_axisbelow(True)
     
-    # 边框设置（Nature风格：只保留左侧和底部）
+    # (Nature: and)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_linewidth(1.5)
     ax.spines['bottom'].set_linewidth(1.5)
 
-    # 设置轴范围
+    # Note.
     ax.set_xlim(-0.5 * x_spacing, (len(global_ordered_genes) - 0.5) * x_spacing)
     ax.set_ylim(-0.5, len(doms) - 0.5)
 
-    # 颜色条（放置在右侧上半部分）
+    # (in)
     sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    # 缩小色条的纵向范围，让它只占上半部分
+    # of,
     from mpl_toolkits.axes_grid1.inset_locator import inset_axes
     
-    # 创建色条，占据右侧上半部分（纵向 0.5-1.0）
+    # create, (0.5-1.0)
     cbar_ax = inset_axes(ax,
-                        width="2%",  # 色条宽度
-                        height="48%",  # 色条高度（上半部分）
+                        width="2%",  # Note.
+                        height="48%",  # ()
                         loc='upper right',
-                        bbox_to_anchor=(0.04, -0.1, 1, 1),  # 相对于ax的位置
+                        bbox_to_anchor=(0.04, -0.1, 1, 1),  # ax of
                         bbox_transform=ax.transAxes,
                         borderpad=0)
     
@@ -289,11 +274,11 @@ def plot_bubble_per_domain(df_long: pd.DataFrame,
     cbar.ax.tick_params(labelsize=9)
     cbar.outline.set_linewidth(1.5)
 
-    # Hit Spots 图例（放置在右侧下半部分）
+    # Hit Spots plot (in)
     if np.nanmax(hs_valid) > 0:
         handles = []
         labels = []
-        # 选择3-4个代表性大小
+        # select 3-4 tablesize
         ticks = np.linspace(hs_valid[hs_valid > 0].min(), hs_valid.max(), num=4)
         for t in ticks:
             s_t = (t - hs_valid.min()) / (hs_valid.max() - hs_valid.min() + 1e-12)
@@ -302,12 +287,12 @@ def plot_bubble_per_domain(df_long: pd.DataFrame,
                                       edgecolors='black', linewidths=0.5))
             labels.append(f"{int(t)}")
         
-        # 图例放在右侧下半部分（纵向 0-0.5），居中对齐
+        # plot in (0-0.5), in align
         leg = ax.legend(handles, labels, title="Hit Spots", 
                        scatterpoints=1,
-                       loc='center',  # 图例框居中
-                       bbox_to_anchor=(1.04, 0.18),  # x: 右侧，y: 下半部分中心（0.25）
-                       bbox_transform=ax.transAxes,  # 使用轴坐标系
+                       loc='center',  # plot in
+                       bbox_to_anchor=(1.04, 0.18),  # x:,y: in (0.25)
+                       bbox_transform=ax.transAxes,  # Note.
                        frameon=True, 
                        framealpha=0.9, 
                        edgecolor='black',
@@ -318,10 +303,10 @@ def plot_bubble_per_domain(df_long: pd.DataFrame,
                        borderpad=1.0)
         leg.get_frame().set_linewidth(1.5)
     
-    # 紧凑布局
+    # Note.
     plt.tight_layout()
 
-    # 保存图片（PNG和PDF）
+    # Saveplot (PNG and PDF)
     fig.savefig(out_png, dpi=dpi, bbox_inches="tight", facecolor='white')
     pdf_path = out_png.rsplit(".", 1)[0] + ".pdf"
     fig.savefig(pdf_path, bbox_inches="tight", facecolor='white')
@@ -378,13 +363,13 @@ def main():
     print("Nature-Style Bubble Plot Generation")
     print("=" * 60)
     
-    # 加载数据
+    # load
     all_top_csv = os.path.join(args.prepared_dir, args.top_csv_name)
     print(f"\n[INFO] Loading data from: {all_top_csv}")
     df_all = load_all_top_table(all_top_csv)
     print(f"[INFO] Loaded {len(df_all)} total records")
 
-    # 选取每个domain的top基因
+    # each domain of topgene
     print(f"\n[INFO] Selecting top {args.top_n} genes per domain...")
     per_domain_genes, global_ordered_genes = pick_global_x_set_from_domain_top3(
         df_all, top_n=args.top_n
@@ -394,12 +379,12 @@ def main():
     
     print(f"[INFO] Selected {len(global_ordered_genes)} unique genes across {len(per_domain_genes)} domains")
 
-    # 构造绘图长表（每个domain只显示自己的top基因，但按全局顺序排列）
+    # plottable (each domain of topgene, by column)
     print("\n[INFO] Building plot matrix...")
     df_plot = build_plot_matrix_per_domain(df_all, per_domain_genes, global_ordered_genes)
     print(f"[INFO] Plot matrix shape: {df_plot.shape}")
 
-    # 绘制Nature风格bubble图
+    # plotNaturebubbleplot
     print("\n[INFO] Creating Nature-style bubble plot...")
     plot_bubble_per_domain(
         df_long=df_plot,

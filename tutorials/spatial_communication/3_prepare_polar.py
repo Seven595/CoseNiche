@@ -1,12 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-将 whole_slice_attention_layer_L.* 预聚合为绘图所需的紧凑CSV
-- 输出全量聚合(含 sum、mean)与可选的TopK精简CSV
-- 支持分块读取大型CSV；若输入为Parquet则一次性读取（可按需修改为分块）
-- 基因视角：kv_gene_symbol 与 q_gene_symbol
-- 维度：spot-level(center×neighbor×gene)、domain-level(neighbors: center×domain×gene；global: domain×gene)
-- 指标：attn_score 的 sum 与 mean（均计算并保存）
-"""
+""" Pre-aggregate whole_slice_attention_layer_L.* into compact CSV files for plotting - Output full aggregation(sum, mean) and optional compact TopK CSV - Support chunked reading for large CSV files;read Parquet input in one pass (can be changed to chunked mode if needed) - Gene view:kv_gene_symbol and q_gene_symbol - dimensions:spot-level(center×neighbor×gene), domain-level(neighbors: center×domain×gene;global: domain×gene) - metrics:attn_score of sum and mean (both are computed and saved) """
 
 import os
 import gc
@@ -20,16 +13,16 @@ import anndata as ad
 def load_domains(adata_path: str) -> pd.Series:
     adata = ad.read_h5ad(adata_path)
     if "ground_truth" not in adata.obs:
-        raise ValueError("adata.obs 中未找到 ground_truth 列")
+        raise ValueError("adata.obs  in not found ground_truth column")
     s = adata.obs["ground_truth"].astype(str).copy()
     s.index = s.index.astype(str)
     return s  # Series: spot_name -> domain
 
 def stream_read(attn_path: str, usecols: Optional[List[str]] = None, chunksize: int = 2_000_000):
     """
-    流式读取注意力表：
-    - Parquet: 直接一次性读取为 DataFrame
-    - CSV: 使用 pandas chunksize 分块
+    Stream-read the attention table:
+    - Parquet: read directly into a DataFrame
+    - CSV: use pandas chunksize for CSV chunks
     """
     if attn_path.endswith(".parquet"):
         df = pd.read_parquet(attn_path, columns=usecols)
@@ -38,19 +31,17 @@ def stream_read(attn_path: str, usecols: Optional[List[str]] = None, chunksize: 
         for chunk in pd.read_csv(attn_path, usecols=usecols, chunksize=chunksize):
             yield chunk
 
-# ---------------- 主流程：分块聚合 sum 与 count，最后统一计算 mean ----------------
+# ---------------- :aggregation sum and count, after compute mean ----------------
 
 def prepare_aggregations_csv(
     out_dir: str,
     layer: int = 5,
     value_col: str = "attn_score",
     chunksize: int = 2_000_000,
-    keep_topk_for_speed: Optional[int] = None,   # 例如 5 或 10；None 表示不裁剪
+    keep_topk_for_speed: Optional[int] = None,   # 5 or 10;None meanstrim
 ):
-    """
-    生成用于绘图的紧凑CSV文件，保存于 out_dir/agg_csv/ 下。
-    """
-    # 输入路径
+    """ Generate compact CSV files for plotting,saved under out_dir/agg_csv/. """
+    # Input paths
     attn_parquet = os.path.join(out_dir, f"whole_slice_attention_layer_{layer}.parquet")
     attn_csv = os.path.join(out_dir, f"whole_slice_attention_layer_{layer}.csv")
     if os.path.exists(attn_parquet):
@@ -58,12 +49,12 @@ def prepare_aggregations_csv(
     elif os.path.exists(attn_csv):
         attn_path = attn_csv
     else:
-        raise FileNotFoundError(f"未找到 whole_slice_attention_layer_{layer} 的 Parquet 或 CSV")
+        raise FileNotFoundError(f"not found whole_slice_attention_layer_{layer}  of  Parquet  or  CSV")
 
     adata_path = os.path.join(out_dir, "adata_with_metadata.h5ad")
     dom_series = load_domains(adata_path)
 
-    # 输出目录
+    # Output directory
     save_dir = os.path.join(out_dir, "agg_csv")
     os.makedirs(save_dir, exist_ok=True)
 
@@ -71,7 +62,7 @@ def prepare_aggregations_csv(
                "q_gene_symbol", "kv_gene_symbol",
                value_col]
 
-    # 累加容器（用列表存块聚合结果，最后concat再二次聚合）
+    # (columntableaggregation, after concataggregation)
     acc_spot_kv = []   # center, neighbor, gene, sum, count
     acc_spot_q  = []
 
@@ -81,21 +72,21 @@ def prepare_aggregations_csv(
     acc_dom_glb_kv = []  # domain, gene, sum, count
     acc_dom_glb_q  = []
 
-    # 分块读取并聚合
+    # readingaggregation
     for chunk in stream_read(attn_path, usecols=usecols, chunksize=chunksize):
-        # 统一类型 & 清洗
+        # &
         for col in ["center_name","neighbor_name","q_gene_symbol","kv_gene_symbol"]:
             if col in chunk.columns:
                 chunk[col] = chunk[col].astype(str)
 
-        # 映射邻居domain（无匹配设为 "NA"）
+        # domain (for "NA")
         chunk["neighbor_domain"] = chunk["neighbor_name"].map(lambda x: dom_series.get(str(x), "NA"))
 
-        # 过滤空基因
+        # filtergene
         sub_kv = chunk[chunk["kv_gene_symbol"].str.len() > 0][["center_name","neighbor_name","neighbor_domain","kv_gene_symbol", value_col]].copy()
         sub_q  = chunk[chunk["q_gene_symbol"].str.len()  > 0][["center_name","neighbor_name","neighbor_domain","q_gene_symbol",  value_col]].copy()
 
-        # spot-level：center × neighbor × gene
+        # spot-level:center × neighbor × gene
         g = sub_kv.groupby(["center_name","neighbor_name","kv_gene_symbol"], observed=True)[value_col]
         acc_spot_kv.append(
             g.agg(sum_val="sum", cnt="count").reset_index()
@@ -107,7 +98,7 @@ def prepare_aggregations_csv(
              .rename(columns={"q_gene_symbol":"gene","sum_val":"sum","cnt":"count"})
         )
 
-        # domain-level（neighbors 范围）：center × domain × gene
+        # domain-level (neighbors):center × domain × gene
         g = sub_kv.groupby(["center_name","neighbor_domain","kv_gene_symbol"], observed=True)[value_col]
         acc_dom_nei_kv.append(
             g.agg(sum_val="sum", cnt="count").reset_index()
@@ -119,7 +110,7 @@ def prepare_aggregations_csv(
              .rename(columns={"neighbor_domain":"domain","q_gene_symbol":"gene","sum_val":"sum","cnt":"count"})
         )
 
-        # domain-level（global）：domain × gene
+        # domain-level (global):domain × gene
         g = sub_kv.groupby(["neighbor_domain","kv_gene_symbol"], observed=True)[value_col]
         acc_dom_glb_kv.append(
             g.agg(sum_val="sum", cnt="count").reset_index()
@@ -134,7 +125,7 @@ def prepare_aggregations_csv(
         del sub_kv, sub_q, chunk
         gc.collect()
 
-    # 合并并做最终聚合(sum、count -> mean)
+    # aggregation(sum, count -> mean)
     def combine_and_finalize(parts: List[pd.DataFrame], key_cols: List[str]) -> pd.DataFrame:
         if not parts:
             return pd.DataFrame(columns=key_cols+["sum","count","mean"])
@@ -154,7 +145,7 @@ def prepare_aggregations_csv(
     dom_glb_kv = combine_and_finalize(acc_dom_glb_kv, ["domain","gene"])
     dom_glb_q  = combine_and_finalize(acc_dom_glb_q,  ["domain","gene"])
 
-    # 保存全量CSV
+    # saveCSV
     agg_dir = os.path.join(out_dir, "agg_csv")
     os.makedirs(agg_dir, exist_ok=True)
 
@@ -178,11 +169,11 @@ def prepare_aggregations_csv(
     for k, p in paths_full.items():
         print(f" - {k}: {p}")
 
-    # 生成 TopK 精简CSV（可选）
+    # TopK CSV (optional)
     if keep_topk_for_speed is not None and keep_topk_for_speed > 0:
         k = int(keep_topk_for_speed)
 
-        # spot-level：每个 center×neighbor 维度取 gene 的 topK（分别就 sum 和 mean 选）
+        # spot-level: each center×neighbor dimensions gene of top K (sum and mean)
         def topk_spot(df: pd.DataFrame, by_cols: List[str], k: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
             df = df.copy()
             df["rank_sum"]  = df.groupby(by_cols)["sum"].rank(method="first", ascending=False)
@@ -191,7 +182,7 @@ def prepare_aggregations_csv(
             top_mean = df[df["rank_mean"] <= k].drop(columns=["rank_sum","rank_mean"])
             return top_sum, top_mean
 
-        # domain-level（neighbors 范围）：每个 center×domain 取 gene 的 topK
+        # domain-level (neighbors): each center×domain gene of topK
         def topk_domain_neighbors(df: pd.DataFrame, k: int):
             df = df.copy()
             df["rank_sum"]  = df.groupby(["center_name","domain"])["sum"].rank(method="first", ascending=False)
@@ -200,7 +191,7 @@ def prepare_aggregations_csv(
             top_mean = df[df["rank_mean"] <= k].drop(columns=["rank_sum","rank_mean"])
             return top_sum, top_mean
 
-        # domain-level（global）：每个 domain 取 gene 的 topK
+        # domain-level (global): each domain gene of topK
         def topk_domain_global(df: pd.DataFrame, k: int):
             df = df.copy()
             df["rank_sum"]  = df.groupby(["domain"])["sum"].rank(method="first", ascending=False)
@@ -209,7 +200,7 @@ def prepare_aggregations_csv(
             top_mean = df[df["rank_mean"] <= k].drop(columns=["rank_sum","rank_mean"])
             return top_sum, top_mean
 
-        # 计算 topK
+        # compute topK
         tk_spot_kv_sum,  tk_spot_kv_mean  = topk_spot(spot_kv, ["center_name","neighbor_name"], k)
         tk_spot_q_sum,   tk_spot_q_mean   = topk_spot(spot_q,  ["center_name","neighbor_name"], k)
 
@@ -236,7 +227,7 @@ def prepare_aggregations_csv(
             "dom_glb_q_topk_mean":  os.path.join(agg_dir, f"domain_level_q_global_top{k}_by_mean.csv"),
         }
 
-        # 保存 TopK CSV
+        # Save TopK CSV
         tk_spot_kv_sum.to_csv(paths_topk["spot_kv_topk_sum"], index=False)
         tk_spot_kv_mean.to_csv(paths_topk["spot_kv_topk_mean"], index=False)
         tk_spot_q_sum.to_csv(paths_topk["spot_q_topk_sum"], index=False)
@@ -257,9 +248,9 @@ def prepare_aggregations_csv(
             print(f" - {k}: {p}")
 
 if __name__ == "__main__":
-    # 修改为你的导出目录与层号
-    out_dir = "./PDAC/whole_slice_data_20251028_173836"  # 替换为实际目录
+    # for of exportdirectory and layer number
+    out_dir = "./PDAC/whole_slice_data_20251028_173836"  # replace with the actual directory
     layer = 5
-    # keep_topk_for_speed：例如 5；若不想裁剪则设 None
+    # keep_topk_for_speed: 5;trim None
     prepare_aggregations_csv(out_dir=out_dir, layer=layer, value_col="attn_score",
                              chunksize=2_000_000, keep_topk_for_speed=5)

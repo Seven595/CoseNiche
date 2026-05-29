@@ -1,21 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-基因功能可塑性分析：比较同一基因在不同空间域的交互网络
-
-功能：
-1. 对预定义的关键基因（如肿瘤标志物、免疫基因等）
-2. 在不同domain中随机采样包含该基因的spots
-3. 提取该基因在每个spot的Top partner genes
-4. 对比不同domain中该基因partner的富集通路差异
-
-这揭示了基因在不同空间微环境中的功能可塑性
-
-Usage:
-    python 5_single_gene_in_spots_analysis.py --dataset PDAC
-    python 5_single_gene_in_spots_analysis.py --dataset HBRC
-    python 5_single_gene_in_spots_analysis.py --dataset OvaryCancer
-"""
+""" gene function can analysis:gene in different spatial domains of : 1. of gene (tumor, immunegene) 2. in different domain in random containsgene of spots 3. gene in each spot of Top partner genes 4. different domain in genepartner of pathway gene in different spatial microenvironments in of can Usage: python 5_single_gene_in_spots_analysis.py --dataset PDAC python 5_single_gene_in_spots_analysis.py --dataset HBRC python 5_single_gene_in_spots_analysis.py --dataset Ovary Cancer """
 
 import os
 import pickle
@@ -38,67 +23,67 @@ from dataset_config import get_config
 # =========================
 # Default Analysis Parameters
 # =========================
-# 基因筛选参数
-MIN_DOMAINS_WITH_GENE = 2  # 基因至少在多少个domain中表达
-MIN_SPOTS_PER_DOMAIN = 3   # 基因在每个domain中至少表达的spot数量
+# genefilterParameters
+MIN_DOMAINS_WITH_GENE = 2  # gene in domain in table
+MIN_SPOTS_PER_DOMAIN = 3   # gene in each domain in table of spot count
 
-# 采样参数
-SPOTS_PER_DOMAIN = 5  # 每个domain采样的spot数量
-TOP_K_PARTNERS = 100  # 提取Top-K个partner基因
-MIN_EXPRESSION = 0.1  # 基因最低表达阈值（可选）
+# parameters
+SPOTS_PER_DOMAIN = 5  # each domain of spot count
+TOP_K_PARTNERS = 100  # Top-K partnergene
+MIN_EXPRESSION = 0.1  # genetable (optional)
 
-# 手动指定感兴趣的基因（可选，如果为空则自动筛选）
+# of gene (optional, if is emptyfilter)
 MANUAL_QUERY_GENES = [
-    # 'KRAS',      # 胰腺癌驱动基因
-    # 'TP53',      # 肿瘤抑制基因
-    # 'CD8A',      # T细胞标志物
-    # 'COL1A1',    # 胶原蛋白（基质）
-    # 'KRT19',     # 上皮细胞标志物
-    # 'PDGFRA',    # 成纤维细胞标志物
-    # 'MKI67',     # 增殖标志物
-    # 'CD68',      # 巨噬细胞标志物
+    # 'KRAS', # pancreatic cancergene
+    # 'TP53', # tumorgene
+    # 'CD8A', # T
+    # 'COL1A1', # (stroma)
+    # 'KRT19', #
+    # 'PDGFRA', #
+    # 'MKI67', #
+    # 'CD68', #
 ]
 
-# 富集分析参数 - 将从config读取
+# Analysis Parameters - from configReading
 ADJ_PVAL_CUTOFF = 0.05
 
 # =========================
 # Helper Functions
 # =========================
 def load_data(config):
-    """加载所有必需数据"""
+    """load all required"""
     print("[INFO] Loading data...")
     
-    # 加载h5ad
+    # loadh5ad
     adata = sc.read_h5ad(config.h5ad_path)
     
-    # 加载ground truth（如果需要）
+    # loadground truth (if)
     if config.truth_path is not None:
         df_meta = pd.read_csv(config.truth_path)[config.truth_column]
         adata.obs['domain'] = df_meta.values
     else:
-        # 使用已有的列
+        # of column
         if config.obs_column in adata.obs.columns:
             adata.obs['domain'] = adata.obs[config.obs_column]
         else:
             raise ValueError(f"Column '{config.obs_column}' not found in adata.obs")
     
-    # 加载vocab
+    # loadvocab
     with open(config.vocab_path, 'r') as f:
         vocab = json.load(f)
-    # 构建 symbol -> id 和 id -> symbol 映射
+    # build symbol -> id and id -> symbol
     sym2id = {str(k).strip(): int(v) for k, v in vocab.items()}
     id2sym = {int(v): str(k).strip() for k, v in vocab.items()}
     
-    # 加载context genes
+    # loadcontext genes
     with open(config.ctx_genes_pkl_path, "rb") as f:
         ctx_genes = pickle.load(f)
     
-    # 加载attention scores
+    # loadattention scores
     with open(config.attn_pkl_path, "rb") as f:
         attn_packs = pickle.load(f)
     
-    # 展平attention到指定层
+    # attention to
     layer_key = f"context_encoder_layer_{config.use_layer}"
     A_list = []
     for pack in attn_packs:
@@ -110,7 +95,7 @@ def load_data(config):
             A_list.append(A_raw)
     
     print(f"  Loaded {len(A_list)} attention matrices")
-    print(f"  Loaded {len(ctx_genes)} context gene lists")
+    print(f" Loaded {len(ctx_genes)} context gene lists")
     print(f"  Total spots: {adata.n_obs}")
     print(f"  Domains: {adata.obs['domain'].unique()}")
     
@@ -120,25 +105,13 @@ def load_data(config):
 def filter_genes_by_domain_coverage(adata, ctx_genes: List, id2sym: Dict,
                                     min_domains: int = 2,
                                     min_spots_per_domain: int = 3) -> List[str]:
-    """
-    筛选在多个domain中都有表达的基因
-    
-    Args:
-        adata: AnnData对象，包含domain信息
-        ctx_genes: 每个spot的基因列表
-        id2sym: 基因ID到symbol的映射
-        min_domains: 基因至少在多少个domain中表达
-        min_spots_per_domain: 基因在每个domain中至少表达的spot数量
-    
-    Returns:
-        符合条件的基因列表
-    """
+    """ filter in multiple domain in table of gene Args: adata: Ann Data,containsdomain ctx_genes: each spot of gene list id2sym: gene ID to symbol of min_domains: gene in domain in table min_spots_per_domain: gene in each domain in table of spot count Returns: of gene list """
     print("\n[INFO] Filtering genes by domain coverage...")
     
     domains = adata.obs['domain'].unique()
     print(f"  Domains: {domains}")
     
-    # 统计每个基因在每个domain中的表达情况
+    # genes in each domain in of table
     gene_domain_counts = defaultdict(lambda: defaultdict(int))
     
     for spot_idx in range(len(ctx_genes)):
@@ -149,11 +122,11 @@ def filter_genes_by_domain_coverage(adata, ctx_genes: List, id2sym: Dict,
             gene_symbol = id2sym.get(int(gene_id), str(gene_id))
             gene_domain_counts[gene_symbol][domain] += 1
     
-    # 筛选基因
+    # filtergene
     qualified_genes = []
     
     for gene_symbol, domain_counts in gene_domain_counts.items():
-        # 统计该基因在多少个domain中满足最小spot数量要求
+        # gene in domain in spot count
         domains_with_sufficient_spots = sum(
             1 for domain, count in domain_counts.items()
             if count >= min_spots_per_domain
@@ -165,7 +138,7 @@ def filter_genes_by_domain_coverage(adata, ctx_genes: List, id2sym: Dict,
     print(f"\n  Total genes found: {len(gene_domain_counts)}")
     print(f"  Genes expressed in >= {min_domains} domains: {len(qualified_genes)}")
     
-    # 显示统计信息
+    # Note.
     if qualified_genes:
         print(f"\n  Top 20 qualified genes (by total spots):")
         gene_total_spots = {
@@ -181,7 +154,7 @@ def filter_genes_by_domain_coverage(adata, ctx_genes: List, id2sym: Dict,
 
 
 def find_gene_in_spot(spot_idx: int, gene_symbol: str, ctx_genes: List, id2sym: Dict) -> Tuple[bool, int]:
-    """检查某个spot是否包含指定基因，返回 (是否包含, 基因在spot中的索引)"""
+    """Check spotcontainsgene, (contains, gene in spot in of)"""
     genes_in_spot = ctx_genes[spot_idx]
     symbols_in_spot = [id2sym.get(int(g), str(g)) for g in genes_in_spot]
     
@@ -195,36 +168,36 @@ def find_gene_in_spot(spot_idx: int, gene_symbol: str, ctx_genes: List, id2sym: 
 def get_top_partners_for_gene(spot_idx: int, gene_idx: int, 
                                ctx_genes: List, A_list: List, id2sym: Dict,
                                top_k: int = 100) -> List[Tuple[str, float]]:
-    """获取指定基因在指定spot的Top-K partner genes"""
+    """gene in spot of Top-K partner genes"""
     genes_in_spot = ctx_genes[spot_idx]
     A = A_list[spot_idx]
     
-    # 对称化
+    # Note.
     A_sym = 0.5 * (A + A.T) if A.ndim == 2 else A
     
-    # 提取该基因的注意力行
+    # gene of rows
     if gene_idx >= A_sym.shape[0]:
         return []
     
     attention_row = A_sym[gene_idx, :]
     
-    # 确保尺寸对齐：取两者最小长度
+    # align:
     min_len = min(len(genes_in_spot), len(attention_row))
     if min_len == 0:
         return []
     
-    # 只使用有效范围的索引
+    # of
     valid_attention = attention_row[:min_len]
     
-    # 排序（排除自身）
+    # ()
     sorted_indices = np.argsort(-valid_attention)
     partners = []
     
     for idx in sorted_indices:
-        # 边界检查
+        # check
         if idx >= min_len:
             continue
-        if idx == gene_idx:  # 跳过自身
+        if idx == gene_idx:  # Skipping
             continue
         if len(partners) >= top_k:
             break
@@ -240,22 +213,22 @@ def get_top_partners_for_gene(spot_idx: int, gene_idx: int,
 def sample_spots_with_gene(adata, gene_symbol: str, domain: str, 
                            ctx_genes: List, id2sym: Dict,
                            n_samples: int = 5, min_expr: float = 0.1) -> List[int]:
-    """在指定domain中随机采样包含目标基因的spots"""
-    # 获取该domain的所有spots
+    """ in domain in random containsgene of spots"""
+    # domain of all spots
     domain_mask = adata.obs['domain'] == domain
     domain_indices = np.where(domain_mask)[0].tolist()
     
-    # 筛选包含目标基因且表达量足够的spots
+    # filtercontainsgeneexpression level of spots
     valid_spots = []
     for spot_idx in domain_indices:
         has_gene, _ = find_gene_in_spot(spot_idx, gene_symbol, ctx_genes, id2sym)
         if has_gene:
-            # 可选：检查表达量
+            # optional:Checkexpression level
             # expr_val = adata.X[spot_idx, adata.var_names == gene_symbol]
             # if expr_val > min_expr:
             valid_spots.append(spot_idx)
     
-    # 随机采样
+    # random
     if len(valid_spots) == 0:
         return []
     
@@ -268,7 +241,7 @@ def sample_spots_with_gene(adata, gene_symbol: str, domain: str,
 def run_enrichment_for_gene_list(gene_list: List[str], 
                                   config,
                                   cutoff: float = None) -> pd.DataFrame:
-    """对基因列表进行富集分析"""
+    """gene listperformanalysis"""
     if len(gene_list) == 0:
         return pd.DataFrame()
     
@@ -310,22 +283,22 @@ def run_enrichment_for_gene_list(gene_list: List[str],
 
 def compare_pathway_enrichment(df1: pd.DataFrame, df2: pd.DataFrame, 
                                 domain1: str, domain2: str) -> pd.DataFrame:
-    """比较两个domain的富集结果，识别差异性通路"""
+    """ domain of,pathway"""
     if df1.empty or df2.empty:
         return pd.DataFrame()
     
-    # 获取两个domain的显著通路
+    # domain of pathway
     terms1 = set(df1[df1['adj_pval'] < ADJ_PVAL_CUTOFF]['term_clean'].unique())
     terms2 = set(df2[df2['adj_pval'] < ADJ_PVAL_CUTOFF]['term_clean'].unique())
     
-    # 分类通路
+    # pathway
     unique_to_domain1 = terms1 - terms2
     unique_to_domain2 = terms2 - terms1
     shared = terms1 & terms2
     
     comparison = []
     
-    # Domain1特异性通路
+    # Domain1pathway
     for term in unique_to_domain1:
         row = df1[df1['term_clean'] == term].iloc[0]
         comparison.append({
@@ -336,7 +309,7 @@ def compare_pathway_enrichment(df1: pd.DataFrame, df2: pd.DataFrame,
             'library': row['Library']
         })
     
-    # Domain2特异性通路
+    # Domain2pathway
     for term in unique_to_domain2:
         row = df2[df2['term_clean'] == term].iloc[0]
         comparison.append({
@@ -347,14 +320,14 @@ def compare_pathway_enrichment(df1: pd.DataFrame, df2: pd.DataFrame,
             'library': row['Library']
         })
     
-    # 共享但显著性差异的通路
+    # of pathway
     for term in shared:
         row1 = df1[df1['term_clean'] == term].iloc[0]
         row2 = df2[df2['term_clean'] == term].iloc[0]
         
-        # 计算p值差异
+        # computep
         pval_ratio = row1['adj_pval'] / row2['adj_pval']
-        if pval_ratio > 2 or pval_ratio < 0.5:  # 2倍差异
+        if pval_ratio > 2 or pval_ratio < 0.5:  # 2
             comparison.append({
                 'term': term,
                 'category': 'Shared (differential significance)',
@@ -372,12 +345,12 @@ def compare_pathway_enrichment(df1: pd.DataFrame, df2: pd.DataFrame,
 # =========================
 def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym, 
                             ctx_genes, A_list, config):
-    """分析单个基因在不同domain的功能可塑性"""
+    """analysisgenes in different domain of can """
     print(f"\n{'='*60}")
     print(f"Analyzing gene: {gene_symbol}")
     print(f"{'='*60}")
     
-    # 检查基因是否在vocab中
+    # Checkgene in vocab in
     if gene_symbol not in sym2id:
         print(f"[SKIP] Gene {gene_symbol} not in vocabulary")
         return
@@ -387,15 +360,15 @@ def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym,
     
     results = {}
     
-    # 使用config中的参数
+    # config in of Parameters
     spots_per_domain = config.spots_per_domain_sample
     top_k_partners = config.top_k_partners_plasticity
     
-    # 对每个domain采样spots并提取partners
+    # each domainspotspartners
     for domain in domains:
         print(f"\n[Domain: {domain}]")
         
-        # 采样spots
+        # spots
         sampled_spots = sample_spots_with_gene(
             adata, gene_symbol, domain, ctx_genes, id2sym, 
             n_samples=spots_per_domain
@@ -407,7 +380,7 @@ def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym,
         
         print(f"  Sampled {len(sampled_spots)} spots")
         
-        # 收集所有采样spots中该基因的partners
+        # all spots in gene of partners
         all_partners = []
         for spot_idx in sampled_spots:
             has_gene, gene_idx = find_gene_in_spot(spot_idx, gene_symbol, ctx_genes, id2sym)
@@ -418,14 +391,14 @@ def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym,
                 )
                 all_partners.extend([p[0] for p in partners])
         
-        # 去重并统计频率
+        # Note.
         partner_counts = pd.Series(all_partners).value_counts()
         top_partners = partner_counts.head(top_k_partners).index.tolist()
         
         print(f"  Found {len(partner_counts)} unique partners")
         print(f"  Top 5 partners: {', '.join(top_partners[:5])}")
         
-        # 富集分析
+        # analysis
         print(f"  Running enrichment analysis...")
         enrichment_df = run_enrichment_for_gene_list(
             top_partners, config
@@ -443,7 +416,7 @@ def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym,
             'enrichment': enrichment_df
         }
     
-    # 两两比较domains
+    # domains
     print(f"\n[Pairwise Domain Comparison]")
     domain_list = list(results.keys())
     
@@ -465,19 +438,19 @@ def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym,
                 comparison_df['domain_pair'] = f"{d1}_vs_{d2}"
                 comparisons.append(comparison_df)
     
-    # 保存结果
+    # save
     gene_output_dir = os.path.join(config.gene_plasticity_dir, safe_filename(gene_symbol))
     os.makedirs(gene_output_dir, exist_ok=True)
     
-    # 保存每个domain的结果
+    # Save each domain of
     for domain, data in results.items():
-        # 1. 保存富集结果
+        # 1. save
         domain_file = os.path.join(gene_output_dir, f"{safe_filename(domain)}_enrichment.csv")
         if not data['enrichment'].empty:
             data['enrichment'].to_csv(domain_file, index=False)
             print(f"[SAVE] {domain_file}")
         
-        # 2. 保存top partner基因列表
+        # 2. Savetop partnergene list
         partners_file = os.path.join(gene_output_dir, f"{safe_filename(domain)}_top_partners.txt")
         with open(partners_file, 'w') as f:
             f.write(f"# Top partner genes for {gene_symbol} in {domain}\n")
@@ -488,9 +461,9 @@ def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym,
                 f.write(f"{i}\t{partner}\n")
         print(f"[SAVE] {partners_file}")
         
-        # 3. 保存详细的partners统计信息（包含频率）
+        # 3. save of partners (contains)
         partners_stats_file = os.path.join(gene_output_dir, f"{safe_filename(domain)}_partners_stats.csv")
-        # 重新计算partner频率（从原始数据）
+        # computepartner (from)
         all_partners_with_scores = []
         for spot_idx in data['spots']:
             has_gene, gene_idx = find_gene_in_spot(spot_idx, gene_symbol, ctx_genes, id2sym)
@@ -501,16 +474,16 @@ def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym,
                 )
                 all_partners_with_scores.extend(partners)
         
-        # 统计每个partner的出现频率和平均attention score
+        # each partner of and attention score
         partner_stats = defaultdict(lambda: {'count': 0, 'total_score': 0.0, 'scores': []})
         for partner, score in all_partners_with_scores:
             partner_stats[partner]['count'] += 1
             partner_stats[partner]['total_score'] += score
             partner_stats[partner]['scores'].append(score)
         
-        # 构建统计DataFrame
+        # build DataFrame
         stats_rows = []
-        for partner in data['partners']:  # 按照已排序的top partners顺序
+        for partner in data['partners']:  # by of top partners
             if partner in partner_stats:
                 stats = partner_stats[partner]
                 stats_rows.append({
@@ -526,13 +499,13 @@ def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym,
             stats_df.to_csv(partners_stats_file, index=False)
             print(f"[SAVE] {partners_stats_file}")
     
-    # 保存比较结果
+    # save
     if comparisons:
         comparison_file = os.path.join(gene_output_dir, "domain_comparisons.csv")
         pd.concat(comparisons, ignore_index=True).to_csv(comparison_file, index=False)
         print(f"[SAVE] {comparison_file}")
     
-    # 保存汇总信息
+    # savetotal
     summary_file = os.path.join(gene_output_dir, "analysis_summary.txt")
     with open(summary_file, 'w') as f:
         f.write(f"Gene Plasticity Analysis Summary\n")
@@ -577,16 +550,16 @@ def analyze_gene_plasticity(gene_symbol: str, adata, sym2id, id2sym,
 
 
 def safe_filename(s: str) -> str:
-    """转换为安全文件名"""
+    """ for file"""
     return re.sub(r'[^\w\-]', '_', str(s))
 
 
 def main(dataset_name: str):
-    """主函数"""
-    # 加载配置
+    """"""
+    # load
     config = get_config(dataset_name)
     
-    # 创建输出目录
+    # createOutput directory
     os.makedirs(config.gene_plasticity_dir, exist_ok=True)
     
     print("="*60)
@@ -600,10 +573,10 @@ def main(dataset_name: str):
     print(f"  Spots sampled per domain: {config.spots_per_domain_sample}")
     print(f"  Top K partners: {config.top_k_partners_plasticity}")
     
-    # 加载数据
+    # load
     adata, sym2id, id2sym, ctx_genes, A_list = load_data(config)
     
-    # 第一步：筛选在多个domain中都有表达的基因
+    # :filter in multiple domain in table of gene
     if MANUAL_QUERY_GENES:
         query_genes = MANUAL_QUERY_GENES
         print(f"\n[INFO] Using manually specified genes: {len(query_genes)} genes")
@@ -620,7 +593,7 @@ def main(dataset_name: str):
             print(f"  or min_spots_per_domain (current: {config.min_spots_per_domain})")
             return
         
-        # 选择Top基因进行分析（按总表达spots数排序）
+        # select Topgeneperformanalysis (by totaltablespots)
         gene_total_spots = {}
         for gene in qualified_genes:
             total_spots = 0
@@ -630,7 +603,7 @@ def main(dataset_name: str):
                     total_spots += 1
             gene_total_spots[gene] = total_spots
         
-        # 选择Top 20个基因（可调整）
+        # select Top 20genes (can)
         top_n = min(20, len(qualified_genes))
         query_genes = sorted(gene_total_spots.items(), key=lambda x: x[1], reverse=True)[:top_n]
         query_genes = [g[0] for g in query_genes]
@@ -639,13 +612,13 @@ def main(dataset_name: str):
         for gene in query_genes:
             print(f"  - {gene} ({gene_total_spots[gene]} spots)")
     
-    # 保存筛选的基因列表
+    # Savefilter of gene list
     genes_file = os.path.join(config.gene_plasticity_dir, "analyzed_genes.txt")
     with open(genes_file, 'w') as f:
         f.write('\n'.join(query_genes))
     print(f"\n[SAVE] Gene list saved to: {genes_file}")
     
-    # 第二步：分析每个查询基因
+    # :analysis each gene
     all_results = {}
     for gene in query_genes:
         try:
@@ -658,7 +631,7 @@ def main(dataset_name: str):
             import traceback
             traceback.print_exc()
     
-    # 生成汇总报告
+    # total
     print("\n" + "="*60)
     print("Summary Report")
     print("="*60)
@@ -687,5 +660,5 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    np.random.seed(42)  # 可重复性
+    np.random.seed(42)  # can
     main(args.dataset)

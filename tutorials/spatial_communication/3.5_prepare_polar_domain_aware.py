@@ -1,10 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Domain感知的TopK选择策略
-- 在选择TopK基因时考虑domain信息
-- 同domain内的邻居倾向于选择相似的基因
-- 提高domain内基因重复率，增强过滤效果
-"""
+""" Domain-aware of TopK select - Consider domain information when selecting TopK genes - Neighbors in the same domain tend to select similar genes - domaingene,filter """
 
 import os
 import gc
@@ -13,22 +8,22 @@ import pandas as pd
 import numpy as np
 import anndata as ad
 
-# ---------------- Domain信息加载 ----------------
+# ---------------- Domainload ----------------
 
 def load_domains(adata_path: str) -> pd.Series:
-    """加载domain信息"""
+    """Load domain information"""
     adata = ad.read_h5ad(adata_path)
     if "ground_truth" not in adata.obs:
-        raise ValueError("adata.obs 中未找到 ground_truth 列")
+        raise ValueError("adata.obs  in not found ground_truth column")
     s = adata.obs["ground_truth"].astype(str).copy()
     s.index = s.index.astype(str)
     return s
 
 def get_neighbor_domains(df: pd.DataFrame, spot_domains: pd.Series) -> dict:
-    """获取每个邻居的domain"""
+    """Get the domain for each neighbor"""
     neighbor_domains = {}
     for neighbor in df['neighbor_name'].unique():
-        # 尝试将neighbor转为索引
+        # neighbor for
         try:
             neighbor_idx = int(neighbor)
             neighbor_name = str(neighbor_idx)
@@ -42,61 +37,38 @@ def get_neighbor_domains(df: pd.DataFrame, spot_domains: pd.Series) -> dict:
     
     return neighbor_domains
 
-# ---------------- Domain感知的TopK选择 ----------------
+# ---------------- Domain-aware of TopK select  ----------------
 
 def topk_domain_aware(df: pd.DataFrame, 
                       neighbor_domains: dict,
                       k: int = 10,
                       domain_weight: float = 0.6,
                       metric: str = "mean") -> pd.DataFrame:
-    """
-    Domain感知的TopK选择
+    """ Domain-aware of TopK select Parameters: ----------- df : pd.DataFrame contains center_name, neighbor_name, gene, mean/sum neighbor_domains : dict neighbor-to-domain mapping k : int number of genes selected for each neighbor domain_weight : float (0-1) weight for domain-level ranking - 1.0: fully use unified domain ranking (all domaingene) - 0.0: fully use independent neighbor ranking (ignore domain) - 0.5-0.7: recommended value,balance domain consistency and neighbor specificity metric : str ranking metric (mean or sum) Returns: -------- pd.DataFrame Domain-awareTopK data after selection """
+    print(f"\n=== Domain-awareTopK select  (k={k}, domain_weight={domain_weight}) ===")
     
-    Parameters:
-    -----------
-    df : pd.DataFrame
-        包含 center_name, neighbor_name, gene, mean/sum
-    neighbor_domains : dict
-        邻居到domain的映射
-    k : int
-        每个邻居选择的基因数
-    domain_weight : float (0-1)
-        domain级别排名的权重
-        - 1.0: 完全按domain统一排名（所有同domain邻居选相同基因）
-        - 0.0: 完全按邻居独立排名（忽略domain）
-        - 0.5-0.7: 推荐值，平衡domain一致性和邻居特异性
-    metric : str
-        排名指标（mean或sum）
-    
-    Returns:
-    --------
-    pd.DataFrame
-        Domain感知选择后的TopK数据
-    """
-    print(f"\n=== Domain感知TopK选择 (k={k}, domain_weight={domain_weight}) ===")
-    
-    # 1. 计算domain级别的基因排名
-    print("\n1️⃣ 计算domain级别基因排名...")
+    # 1. computedomainlevel of gene
+    print("\n1️⃣ Computing domain-level gene ranking...")
     domain_gene_scores = {}
     unique_domains = set(neighbor_domains.values())
     
     for domain in unique_domains:
-        # 该domain的所有邻居
+        # domain of all
         domain_neighbors = [n for n, d in neighbor_domains.items() if d == domain]
         domain_df = df[df['neighbor_name'].isin(domain_neighbors)]
         
         if len(domain_df) == 0:
             continue
         
-        # 计算该domain内每个基因的平均attention
+        # computedomaingenes of attention
         gene_scores = domain_df.groupby('gene')[metric].mean().sort_values(ascending=False)
         domain_gene_scores[domain] = gene_scores
         
-        print(f"  {domain}: {len(domain_neighbors)} 个邻居, {len(gene_scores)} 个基因")
-        print(f"    Top5基因: {list(gene_scores.head(5).index)}")
+        print(f"  {domain}: {len(domain_neighbors)} neighbors, {len(gene_scores)} genes")
+        print(f"    Top5gene: {list(gene_scores.head(5).index)}")
     
-    # 2. 为每个邻居选择TopK
-    print(f"\n2️⃣ 为每个邻居选择Top{k}基因...")
+    # 2. Selecting TopK
+    print(f"\n2️⃣ Selecting Top{k}gene...")
     result_dfs = []
     
     for neighbor in df['neighbor_name'].unique():
@@ -104,28 +76,28 @@ def topk_domain_aware(df: pd.DataFrame,
         domain = neighbor_domains.get(neighbor, "Unknown")
         
         if domain not in domain_gene_scores:
-            # 如果domain未知，回退到独立排名
+            # if domain not, to
             topk_df = neighbor_df.nlargest(k, metric)
             result_dfs.append(topk_df)
             continue
         
-        # 计算混合得分
-        # 邻居本地排名（越小越好）
+        # compute
+        # ()
         neighbor_df['local_rank'] = neighbor_df[metric].rank(method='first', ascending=False)
         
-        # domain级别排名（越小越好）
+        # domainlevel ()
         domain_scores = domain_gene_scores[domain]
         neighbor_df['domain_rank'] = neighbor_df['gene'].map(
             lambda g: domain_scores.index.get_loc(g) + 1 if g in domain_scores.index else len(domain_scores) + 1
         )
         
-        # 混合得分（越小越好）
+        # ()
         neighbor_df['mixed_rank'] = (
             domain_weight * neighbor_df['domain_rank'] + 
             (1 - domain_weight) * neighbor_df['local_rank']
         )
         
-        # 选择TopK
+        #  select TopK
         topk_df = neighbor_df.nsmallest(k, 'mixed_rank')
         topk_df = topk_df.drop(columns=['local_rank', 'domain_rank', 'mixed_rank'])
         
@@ -133,8 +105,8 @@ def topk_domain_aware(df: pd.DataFrame,
     
     result = pd.concat(result_dfs, ignore_index=True)
     
-    # 3. 统计domain内基因重复率
-    print(f"\n3️⃣ Domain内基因重复率统计:")
+    # 3. domaingene
+    print(f"\n3️⃣ Within-domain gene recurrence statistics:")
     for domain in unique_domains:
         domain_neighbors = [n for n, d in neighbor_domains.items() if d == domain]
         if len(domain_neighbors) < 2:
@@ -142,23 +114,23 @@ def topk_domain_aware(df: pd.DataFrame,
         
         domain_result = result[result['neighbor_name'].isin(domain_neighbors)]
         
-        # 统计每个基因在多少个邻居中出现
+        # genes in neighbors in
         gene_freq = domain_result.groupby('gene')['neighbor_name'].nunique()
         
-        # 重复率：出现在2个以上邻居的基因比例
+        # : in 2 of gene
         repeated_genes = gene_freq[gene_freq >= 2]
         repeat_rate = len(repeated_genes) / len(gene_freq) if len(gene_freq) > 0 else 0
         
         print(f"  {domain}:")
-        print(f"    邻居数: {len(domain_neighbors)}")
-        print(f"    独特基因数: {len(gene_freq)}")
-        print(f"    重复基因数: {len(repeated_genes)} ({repeat_rate*100:.1f}%)")
-        print(f"    高频基因(>=3邻居): {list(gene_freq[gene_freq >= 3].head(5).index)}")
+        print(f"    neighbor count: {len(domain_neighbors)}")
+        print(f"    unique gene count: {len(gene_freq)}")
+        print(f"    repeated gene count: {len(repeated_genes)} ({repeat_rate*100:.1f}%)")
+        print(f" high-frequency genes(>=3): {list(gene_freq[gene_freq >= 3].head(5).index)}")
     
-    print(f"\n=== 完成 ===\n")
+    print(f"\n=== Completed ===\n")
     return result
 
-# ---------------- 主函数 ----------------
+# ---------------- ----------------
 
 def prepare_domain_aware_topk(
     out_dir: str,
@@ -168,69 +140,49 @@ def prepare_domain_aware_topk(
     domain_weight: float = 0.6,
     gene_view: str = "kv"
 ):
-    """
-    生成domain感知的TopK CSV文件
-    
-    Parameters:
-    -----------
-    out_dir : str
-        输出目录
-    layer : int
-        使用的层号
-    value_col : str
-        attention列名
-    topk : int
-        每个邻居选择的基因数
-    domain_weight : float (0-1)
-        domain权重
-        - 推荐: 0.5-0.7
-        - 更高: 更强的domain一致性
-        - 更低: 更多的邻居特异性
-    gene_view : str
-        kv 或 q
-    """
+    """ Generate domain-aware TopK CSV files Parameters: ----------- out_dir : str Output directory layer : int layer number to use value_col : str attention column name topk : int number of genes selected for each neighbor domain_weight : float (0-1) domain - : 0.5-0.7 - higher: stronger domain consistency - lower: more neighbor specificity gene_view : str kv or q """
     print("="*80)
-    print(f"Domain感知TopK生成")
-    print(f"  输出目录: {out_dir}")
+    print(f"Domain-awareTopK")
+    print(f"  Output directory: {out_dir}")
     print(f"  Layer: {layer}")
     print(f"  TopK: {topk}")
-    print(f"  Domain权重: {domain_weight}")
+    print(f" Domain: {domain_weight}")
     print("="*80)
     
-    # 1. 加载domain信息
+    # 1. Load domain information
     adata_path = os.path.join(out_dir, "adata_with_metadata.h5ad")
     spot_domains = load_domains(adata_path)
-    print(f"\n✅ 加载了 {len(spot_domains)} 个spots的domain信息")
+    print(f"\n✅ Loaded {len(spot_domains)} spot domain entries")
     print(f"   Domains: {spot_domains.unique()}")
     
-    # 2. 读取全量spot-level数据
+    # 2. Readingspot-level
     agg_dir = os.path.join(out_dir, "agg_csv")
     full_csv = os.path.join(agg_dir, f"spot_level_{gene_view}.csv")
     
     if not os.path.exists(full_csv):
-        raise FileNotFoundError(f"未找到全量数据: {full_csv}")
+        raise FileNotFoundError(f"Full data was not found: {full_csv}")
     
-    print(f"\n✅ 读取全量数据: {full_csv}")
+    print(f"\n✅ Reading full data: {full_csv}")
     df = pd.read_csv(full_csv)
-    print(f"   记录数: {len(df)}")
-    print(f"   中心spots: {df['center_name'].nunique()}")
+    print(f"   record count: {len(df)}")
+    print(f"   center spots: {df['center_name'].nunique()}")
     
-    # 3. 为每个center分别处理
+    # 3. for each centerprocessing
     all_results = []
     centers = df['center_name'].unique()
     
-    print(f"\n开始处理 {len(centers)} 个中心spots...")
+    print(f"\nStart processing {len(centers)}  center spots...")
     
     for i, center in enumerate(centers):
         if (i + 1) % 10 == 0 or i == 0:
-            print(f"  处理进度: {i+1}/{len(centers)}")
+            print(f"  Processing progress: {i+1}/{len(centers)}")
         
         center_df = df[df['center_name'] == center].copy()
         
-        # 获取该center的邻居domains
+        # center of domains
         neighbor_domains = get_neighbor_domains(center_df, spot_domains)
         
-        # Domain感知TopK选择
+        # Domain-awareTopK select 
         topk_df = topk_domain_aware(
             center_df,
             neighbor_domains,
@@ -241,29 +193,29 @@ def prepare_domain_aware_topk(
         
         all_results.append(topk_df)
     
-    # 4. 合并并保存
+    # 4. save
     result = pd.concat(all_results, ignore_index=True)
     
     output_path = os.path.join(agg_dir, f"spot_level_{gene_view}_top{topk}_domain_aware_w{int(domain_weight*10)}.csv")
     result.to_csv(output_path, index=False)
     
     print(f"\n{'='*80}")
-    print(f"✅ 已保存Domain感知TopK文件:")
+    print(f"✅ Saved domain-aware TopK file:")
     print(f"   {output_path}")
-    print(f"   记录数: {len(result)}")
+    print(f"   record count: {len(result)}")
     print(f"={'='*80}\n")
     
     return output_path
 
-# ---------------- 使用示例 ----------------
+# ---------------- ----------------
 
 if __name__ == "__main__":
     out_dir = "./PDAC/whole_slice_data_20251028_173836"
     
-    # 测试不同的domain权重
+    # Test different of domain
     for domain_weight in [0.5, 0.6, 0.7]:
         print(f"\n{'#'*80}")
-        print(f"# 测试 domain_weight = {domain_weight}")
+        print(f"# Test domain_weight = {domain_weight}")
         print(f"{'#'*80}\n")
         
         prepare_domain_aware_topk(

@@ -1,11 +1,4 @@
-"""
-空间注意力可视化与分析脚本
-- 基于导出的空间注意力数据进行高级分析和可视化
-- 实现三个主要可视化:
-  1. Spot-level空间交互图
-  2. 边界Spots分析与关键基因交互
-  3. 全局注意力流动向量场
-"""
+""" Spatial attention visualization and analysis script - Perform advanced analysis and visualization on exported spatial attention data - Implements three main visualizations: 1. Spot-levelplot 2. Spotsanalysis and gene interactions 3. global attention flow vector field """
 
 import os
 import pandas as pd
@@ -22,7 +15,7 @@ import argparse
 import json
 from typing import List, Dict, Tuple, Optional, Union, Any
 from plot_polar import *
-# Nature风格配置
+# Nature
 plt.rcParams.update({
     'font.family': 'sans-serif',
     'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
@@ -52,76 +45,74 @@ plt.rcParams.update({
     'ps.fonttype': 42,
 })
 
-# 禁用不必要的警告
+# of Warning
 import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
 
-# ============= 辅助函数 =============
+# ============= =============
 def load_data(data_dir: str) -> Dict[str, Any]:
     """
-    加载所需数据文件
+    Load required data files
     """
     data = {}
     
-    # 找到综合注意力CSV文件
+    # found CSVfile
     csv_files = [f for f in os.listdir(data_dir) if f.endswith('.csv') and 'combined' in f]
     if not csv_files:
         csv_files = [f for f in os.listdir(data_dir) if f.endswith('.csv') and 'comprehensive' in f]
     if not csv_files:
-        # 尝试找到whole_slice_attention文件
+        # found whole_slice_attention file
         csv_files = [f for f in os.listdir(data_dir) if f.endswith('.csv') and 'whole_slice_attention' in f]
     
     if csv_files:
         attn_csv_path = os.path.join(data_dir, csv_files[0])
-        print(f"使用注意力数据: {attn_csv_path}")
+        print(f"Using attention data: {attn_csv_path}")
         data['attn_df'] = pd.read_csv(attn_csv_path)
     else:
-        raise FileNotFoundError(f"在{data_dir}中未找到注意力CSV文件")
+        raise FileNotFoundError(f" in {data_dir} in not found CSVfile")
     
-    # 加载空间坐标
+    # loadspatial coordinates
     coord_files = [f for f in os.listdir(data_dir) if 'coordinates' in f and f.endswith('.csv')]
     if coord_files:
         coord_csv_path = os.path.join(data_dir, coord_files[0])
-        print(f"使用空间坐标数据: {coord_csv_path}")
+        print(f"Using spatial coordinate data: {coord_csv_path}")
         data['coords_df'] = pd.read_csv(coord_csv_path)
     else:
-        raise FileNotFoundError(f"在{data_dir}中未找到空间坐标CSV文件")
+        raise FileNotFoundError(f" in {data_dir} in not foundspatial coordinatesCSVfile")
     
-    # 加载AnnData (如果存在)
+    # loadAnnData (if in)
     h5ad_files = [f for f in os.listdir(data_dir) if f.endswith('.h5ad')]
     if h5ad_files:
         h5ad_path = os.path.join(data_dir, h5ad_files[0])
-        print(f"使用AnnData文件: {h5ad_path}")
+        print(f"Using AnnData file: {h5ad_path}")
         data['adata'] = sc.read_h5ad(h5ad_path)
     else:
-        print("未找到AnnData文件，将仅使用CSV数据")
+        print("not foundAnnDatafile,CSV")
         data['adata'] = None
     
-    # 加载配体-受体数据库 (如果存在)
+    # loadligand-receptordatabase (if in)
     lr_files = [f for f in os.listdir(data_dir) if 'lr_database' in f and f.endswith('.csv')]
     if lr_files:
         lr_path = os.path.join(data_dir, lr_files[0])
-        print(f"使用配体-受体数据库: {lr_path}")
+        print(f"Using ligand-receptor database: {lr_path}")
         data['lr_df'] = pd.read_csv(lr_path)
     else:
-        print("未找到配体-受体数据库，L-R分析将受限")
+        print("not foundligand-receptordatabase,L-Ranalysis")
         data['lr_df'] = None
     
     return data
 
 def prepare_spot_to_spot_attention(attn_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    计算spot到spot的注意力总和
-    """
-    print("计算Spot-to-Spot注意力...")
+    """ computespot to spot of total and """
+    print("Computing spot-to-spot attention...")
     
-    # 确保数据中有必要的列
+    # in of column
     required_cols = ['center_global_idx', 'neighbor_global_idx', 'attn_sum_norm']
     for col in required_cols:
         if col not in attn_df.columns:
             if col == 'attn_sum_norm' and 'attn_sum' in attn_df.columns:
-                # 计算归一化的注意力总和
+                # compute of total and
                 attn_sum_by_center = attn_df.groupby('center_global_idx')['attn_sum'].sum()
                 attn_df['attn_sum_norm'] = attn_df.apply(
                     lambda x: x['attn_sum'] / attn_sum_by_center[x['center_global_idx']] 
@@ -130,35 +121,33 @@ def prepare_spot_to_spot_attention(attn_df: pd.DataFrame) -> pd.DataFrame:
                     axis=1
                 )
             else:
-                raise ValueError(f"注意力数据中缺少必要列: {col}")
+                raise ValueError(f"Required column is missing from attention data: {col}")
     
-    # 计算从一个spot到另一个spot的总注意力
+    # compute from spot to spot of total
     spot_to_spot = attn_df.groupby(['center_global_idx', 'neighbor_global_idx'])['attn_sum_norm'].sum().reset_index()
     
-    # 重命名列以更清晰
+    # column
     spot_to_spot.columns = ['source_idx', 'target_idx', 'attention_weight']
     
-    # 去除NaN值
+    # NaN
     spot_to_spot = spot_to_spot.dropna()
     
-    print(f"共找到{len(spot_to_spot)}个spot-to-spot连接")
+    print(f"Found{len(spot_to_spot)}spot-to-spot connections")
     return spot_to_spot
 
 def identify_boundary_spots(coords_df: pd.DataFrame, spot_to_spot: pd.DataFrame, 
                            threshold: float = 0.3) -> List[int]:
-    """
-    识别边界spots (与不同聚类的spots有强交互的spots)
-    """
-    print("识别边界spots...")
+    """ Identifying boundary spots (and different cluster of spots of spots) """
+    print("Identifying boundary spots...")
     
-    # 确保有聚类信息
+    # cluster information
     if 'cluster' not in coords_df.columns:
-        print("警告: 未找到聚类信息，将使用KMeans进行简单聚类")
-        # 进行简单的KMeans聚类
+        print("Warning: not foundcluster information,using KMeans for simple clustering")
+        # perform of KMeanscluster
         kmeans = KMeans(n_clusters=7, random_state=42)
         coords_df['cluster'] = kmeans.fit_predict(coords_df[['x', 'y']])
     
-    # 将字符串聚类标签转换为数值（如果还没有转换）
+    # cluster for (if no)
     if coords_df['cluster'].dtype == 'object':
         unique_clusters = coords_df['cluster'].unique()
         cluster_to_num = {cluster: i for i, cluster in enumerate(unique_clusters)}
@@ -166,28 +155,28 @@ def identify_boundary_spots(coords_df: pd.DataFrame, spot_to_spot: pd.DataFrame,
     else:
         coords_df['cluster_num'] = coords_df['cluster']
     
-    # 创建spot_idx到cluster的映射（使用数值标签）
+    # createspot_idx to cluster of ()
     idx_to_cluster = dict(zip(coords_df['spot_idx'], coords_df['cluster_num']))
     
-    # 找到边界spots
+    #  found boundary spots
     boundary_spots = []
     cross_cluster_ratio = {}
     
-    # 计算每个spot对不同聚类的spots的注意力比例
+    # compute each spot different cluster of spots of
     for spot_idx in coords_df['spot_idx'].unique():
         if spot_idx not in idx_to_cluster:
             continue
             
-        # 获取该spot的聚类
+        # spot of cluster
         spot_cluster = idx_to_cluster[spot_idx]
         
-        # 找到该spot关注的所有目标spots
+        # found spot of all spots
         targets = spot_to_spot[spot_to_spot['source_idx'] == spot_idx]
         
         if targets.empty:
             continue
             
-        # 分离同类和异类目标
+        # and
         same_cluster_attn = 0.0
         diff_cluster_attn = 0.0
         
@@ -209,56 +198,54 @@ def identify_boundary_spots(coords_df: pd.DataFrame, spot_to_spot: pd.DataFrame,
             cross_ratio = diff_cluster_attn / total_attn
             cross_cluster_ratio[spot_idx] = cross_ratio
             
-            # 如果跨聚类注意力比例超过阈值，则视为边界spot
+            # if cross-cluster attention ratio, for spot
             if cross_ratio > threshold:
                 boundary_spots.append(spot_idx)
     
-    print(f"已识别出{len(boundary_spots)}个边界spots (跨聚类注意力比例 > {threshold})")
+    print(f"Identified{len(boundary_spots)} boundary spots (cross-cluster attention ratio > {threshold})")
     return boundary_spots, cross_cluster_ratio
 
 def find_attention_flow_vectors(spot_to_spot: pd.DataFrame, coords_df: pd.DataFrame) -> Dict[int, Dict]:
-    """
-    计算每个spot的最大注意力流向量
-    """
-    print("计算注意力流向量...")
+    """ compute each spot of """
+    print("Computing attention flow vectors...")
     
-    # 创建spot_idx到坐标的映射
+    # createspot_idx to of
     idx_to_coords = {}
     for _, row in coords_df.iterrows():
         idx_to_coords[row['spot_idx']] = (row['x'], row['y'])
     
-    # 找出每个spot注意力最强的目标
+    # each spot of
     flow_vectors = {}
     
     for spot_idx in coords_df['spot_idx'].unique():
         if spot_idx not in idx_to_coords:
             continue
             
-        # 找到该spot关注的所有目标spots
+        # found spot of all spots
         targets = spot_to_spot[spot_to_spot['source_idx'] == spot_idx]
         
         if targets.empty:
             continue
             
-        # 找出注意力最强的目标
+        # of
         max_target_row = targets.loc[targets['attention_weight'].idxmax()]
         max_target_idx = max_target_row['target_idx']
         
         if max_target_idx not in idx_to_coords:
             continue
             
-        # 计算向量
+        # compute
         source_pos = idx_to_coords[spot_idx]
         target_pos = idx_to_coords[max_target_idx]
         
-        # 向量: 从源点指向目标点
+        # : from
         direction = np.array([target_pos[0] - source_pos[0], target_pos[1] - source_pos[1]])
         
-        # 计算向量长度
+        # compute
         magnitude = np.linalg.norm(direction)
         
         if magnitude > 0:
-            # 单位向量 * 注意力权重
+            # * attention weights
             normalized_direction = direction / magnitude * max_target_row['attention_weight']
             
             flow_vectors[spot_idx] = {
@@ -269,19 +256,17 @@ def find_attention_flow_vectors(spot_to_spot: pd.DataFrame, coords_df: pd.DataFr
                 'target_position': target_pos
             }
     
-    print(f"为{len(flow_vectors)}个spots计算了注意力流向量")
+    print(f" for {len(flow_vectors)}spots")
     return flow_vectors
 
 def find_gene_pairs_for_boundary_spots(attn_df: pd.DataFrame, boundary_spots: List[int], 
                                       coords_df: pd.DataFrame, lr_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-    """
-    查找边界spots中的高注意力基因对，并标记潜在的配体-受体对
-    """
-    print("分析边界spots的基因对...")
+    """ boundary spots in of gene pairs, in of ligand-receptor """
+    print("analysisboundary spots of gene pairs...")
     
-    # 创建spot_idx到cluster的映射
+    # createspot_idx to cluster of
     if 'cluster' in coords_df.columns:
-        # 确保有数值化的聚类标签
+        # of cluster
         if coords_df['cluster'].dtype == 'object' and 'cluster_num' not in coords_df.columns:
             unique_clusters = coords_df['cluster'].unique()
             cluster_to_num = {cluster: i for i, cluster in enumerate(unique_clusters)}
@@ -289,32 +274,32 @@ def find_gene_pairs_for_boundary_spots(attn_df: pd.DataFrame, boundary_spots: Li
         
         idx_to_cluster = dict(zip(coords_df['spot_idx'], coords_df['cluster_num']))
     else:
-        print("警告: 未找到聚类信息，无法区分同类/异类基因对")
+        print("Warning: not foundcluster information,/gene pairs")
         idx_to_cluster = {idx: 0 for idx in coords_df['spot_idx']}
     
-    # 准备一个配体-受体查询字典
+    # ligand-receptor
     lr_pairs = {}
     if lr_df is not None:
         for _, row in lr_df.iterrows():
             lr_pairs[(row['ligand'], row['receptor'])] = True
     
-    # 收集边界spots的基因对信息
+    # boundary spots of gene pairs
     gene_pairs_data = []
     
     for spot_idx in boundary_spots:
         if spot_idx not in idx_to_cluster:
             continue
             
-        # 获取该spot的聚类
+        # spot of cluster
         spot_cluster = idx_to_cluster[spot_idx]
         
-        # 筛选该spot的数据
+        # filterspot of
         spot_data = attn_df[attn_df['center_global_idx'] == spot_idx]
         
         if spot_data.empty:
             continue
         
-        # 筛选同类和异类交互
+        # filter and
         for neighbor_idx in spot_data['neighbor_global_idx'].unique():
             if pd.isna(neighbor_idx) or neighbor_idx not in idx_to_cluster:
                 continue
@@ -322,14 +307,14 @@ def find_gene_pairs_for_boundary_spots(attn_df: pd.DataFrame, boundary_spots: Li
             neighbor_cluster = idx_to_cluster[int(neighbor_idx)]
             interaction_type = 'same_cluster' if neighbor_cluster == spot_cluster else 'diff_cluster'
             
-            # 提取该邻居的基因对
+            # of gene pairs
             neighbor_data = spot_data[spot_data['neighbor_global_idx'] == neighbor_idx]
             
             for _, row in neighbor_data.iterrows():
                 if pd.isna(row['q_gene_symbol']) or pd.isna(row['kv_gene_symbol']) or not row['q_gene_symbol'] or not row['kv_gene_symbol']:
                     continue
                     
-                # 检查是否为配体-受体对
+                # Check for ligand-receptor
                 is_lr_pair = False
                 lr_direction = ""
                 
@@ -357,30 +342,28 @@ def find_gene_pairs_for_boundary_spots(attn_df: pd.DataFrame, boundary_spots: Li
                     'lr_direction': lr_direction
                 })
     
-    # 创建DataFrame
+    # createDataFrame
     gene_pairs_df = pd.DataFrame(gene_pairs_data)
     
     if not gene_pairs_df.empty:
-        print(f"共找到{len(gene_pairs_df)}个边界基因对，其中{gene_pairs_df['is_lr_pair'].sum()}个是已知配体-受体对")
+        print(f"Found{len(gene_pairs_df)} gene pairs, in {gene_pairs_df['is_lr_pair'].sum()} ligand-receptor")
     else:
-        print("未找到边界基因对")
+        print("not foundgene pairs")
     
     return gene_pairs_df
 
-# ============= 可视化函数 =============
+# ============= can =============
 def plot_spatial_interaction_network(coords_df: pd.DataFrame, spot_to_spot: pd.DataFrame, 
                                     boundary_spots: List[int], cross_cluster_ratio: Dict[int, float],
                                     output_dir: str, percentile_threshold: int = 60):
-    """
-    绘制空间交互网络，突出显示区域边界
-    """
-    print("绘制空间交互网络...")
+    """ plot,region """
+    print("plot...")
     
     plt.figure(figsize=(16, 14))
     
-    # 绘制所有spots
+    # plot all spots
     if 'cluster' in coords_df.columns:
-        # 将字符串聚类标签转换为数值
+        # cluster for
         unique_clusters = coords_df['cluster'].unique()
         cluster_to_num = {cluster: i for i, cluster in enumerate(unique_clusters)}
         coords_df['cluster_num'] = coords_df['cluster'].map(cluster_to_num)
@@ -397,7 +380,7 @@ def plot_spatial_interaction_network(coords_df: pd.DataFrame, spot_to_spot: pd.D
             label='Regular Spots'
         )
     
-    # 高亮显示边界spots
+    # boundary spots
     if boundary_spots:
         boundary_df = coords_df[coords_df['spot_idx'].isin(boundary_spots)]
         plt.scatter(
@@ -406,18 +389,18 @@ def plot_spatial_interaction_network(coords_df: pd.DataFrame, spot_to_spot: pd.D
             label='Boundary Spots'
         )
     
-    # 创建spot_idx到坐标的映射
+    # createspot_idx to of
     idx_to_coords = {}
     for _, row in coords_df.iterrows():
         idx_to_coords[row['spot_idx']] = (row['x'], row['y'])
     
-    # 为避免过多连线，仅显示注意力权重在前N%的连接
+    # for,attention weights in before N% of
     threshold = np.percentile(spot_to_spot['attention_weight'], percentile_threshold)
     strong_connections = spot_to_spot[spot_to_spot['attention_weight'] >= threshold]
     
-    print(f"显示注意力权重在前{100-percentile_threshold}%的连接 (阈值: {threshold:.4f})")
+    print(f"attention weights in before {100-percentile_threshold}% of (: {threshold:.4f})")
     
-    # 绘制注意力连接
+    # plot
     for _, row in strong_connections.iterrows():
         source_idx = row['source_idx']
         target_idx = row['target_idx']
@@ -428,18 +411,18 @@ def plot_spatial_interaction_network(coords_df: pd.DataFrame, spot_to_spot: pd.D
         source_pos = idx_to_coords[source_idx]
         target_pos = idx_to_coords[target_idx]
         
-        # 计算注意力归一化后的线宽和透明度
+        # compute after of and
         weight_norm = row['attention_weight'] / strong_connections['attention_weight'].max()
         line_width = max(0.5, weight_norm * 4)
         alpha = max(0.2, min(0.9, weight_norm * 1.5))
         
-        # 如果是边界spot的连接，使用特殊颜色
+        # if spot of,
         if source_idx in boundary_spots:
             line_color = 'red'
         else:
             line_color = 'blue'
         
-        # 绘制带箭头的连接
+        # plot of
         plt.annotate(
             '', xy=target_pos, xytext=source_pos,
             arrowprops=dict(
@@ -452,12 +435,12 @@ def plot_spatial_interaction_network(coords_df: pd.DataFrame, spot_to_spot: pd.D
             )
         )
     
-    # 添加颜色条（如果有聚类信息）
+    # (if cluster information)
     if 'cluster' in coords_df.columns:
         cbar = plt.colorbar(scatter, orientation='vertical', pad=0.01)
         cbar.set_label('Cluster ID', fontsize=12)
     
-    # 添加图例
+    # plot
     custom_lines = [
         Line2D([0], [0], color='blue', lw=2, marker=None),
         Line2D([0], [0], color='red', lw=2, marker=None),
@@ -470,27 +453,27 @@ def plot_spatial_interaction_network(coords_df: pd.DataFrame, spot_to_spot: pd.D
     plt.ylabel('Y Coordinate', fontsize=14)
     plt.tight_layout()
     
-    # 保存图像
+    # Saveimage
     output_path = os.path.join(output_dir, 'spatial_interaction_network.png')
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"空间交互网络图已保存到: {output_path}")
+    print(f"spatial interaction network plotSaved to : {output_path}")
     
-    # 可选：绘制边界spots的跨聚类注意力比例图
+    # optional:plotboundary spots of cross-cluster attention ratioplot
     if cross_cluster_ratio and len(cross_cluster_ratio) > 0:
         plt.figure(figsize=(10, 6))
         
-        # 转换为DataFrame便于绘制
+        # for DataFrameplot
         ratio_df = pd.DataFrame({
             'spot_idx': list(cross_cluster_ratio.keys()),
             'cross_cluster_ratio': list(cross_cluster_ratio.values())
         })
         
-        # 添加边界标记
+        # Note.
         ratio_df['is_boundary'] = ratio_df['spot_idx'].isin(boundary_spots)
         
-        # 对比图
+        # plot
         sns.barplot(
             x='spot_idx', y='cross_cluster_ratio', hue='is_boundary',
             data=ratio_df.sort_values('cross_cluster_ratio', ascending=False).head(50),
@@ -509,40 +492,38 @@ def plot_spatial_interaction_network(coords_df: pd.DataFrame, spot_to_spot: pd.D
         plt.savefig(ratio_path, dpi=300, bbox_inches='tight')
         plt.close()
         
-        print(f"边界spots比例图已保存到: {ratio_path}")
+        print(f"boundary spotsplotSaved to : {ratio_path}")
     
     return output_path
 
 def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.DataFrame, output_dir: str):
-    """
-    分析并可视化边界spots的基因交互（Nature风格）
-    """
+    """ analysis can boundary spots of gene interactions (Nature) """
     if gene_pairs_df.empty:
-        print("警告: 无边界基因交互数据可用")
+        print("Warning: gene interactionsavailable")
         return None
     
-    print("分析边界spots的基因交互...")
+    print("analysisboundary spots of gene interactions...")
     
-    # Nature配色方案
+    # Nature
     nature_colors = {
-        'same_cluster': '#5BA3C7',  # 青蓝色
-        'diff_cluster': '#E87B8A'   # 珊瑚红色
+        'same_cluster': '#5BA3C7',  # Note.
+        'diff_cluster': '#E87B8A'   # Note.
     }
     
-    # 1. 分析同类vs异类交互
+    # 1. analysisvs
     interaction_counts = gene_pairs_df.groupby('interaction_type').size()
     interaction_avg_score = gene_pairs_df.groupby('interaction_type')['attn_score'].mean()
     
     fig, ax = plt.subplots(figsize=(8, 6), facecolor='white')
     
-    # 使用Nature配色的条形图
+    # Nature of plot
     x_pos = np.arange(len(interaction_counts))
     colors = [nature_colors.get(idx, '#808080') for idx in interaction_counts.index]
     
     bars = ax.bar(x_pos, interaction_counts.values, color=colors, 
                   edgecolor='white', linewidth=1.5, alpha=0.9, width=0.6)
     
-    # 添加数值标签（更优雅的样式）
+    # (of)
     for i, (v, avg) in enumerate(zip(interaction_counts.values, interaction_avg_score.values)):
         ax.text(i, v + max(interaction_counts.values) * 0.02, 
                 f"{v}", 
@@ -551,14 +532,14 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
                 f"avg: {avg:.3f}", 
                 ha='center', va='center', fontsize=9, color='white', fontweight='bold')
     
-    # 设置标签（更简洁）
+    # ()
     ax.set_xticks(x_pos)
     ax.set_xticklabels(['Same Cluster', 'Different Cluster'], fontsize=11, color='#2C3E50')
     ax.set_ylabel('Count', fontsize=12, color='#2C3E50', fontweight='normal')
     ax.set_title('Boundary Spots: Interaction Analysis', fontsize=13, fontweight='bold', 
                  color='#2C3E50', pad=15)
     
-    # 优化网格和边框
+    # Optimization and
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_color('#DDDDDD')
@@ -572,9 +553,9 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
     plt.savefig(count_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
     plt.close()
     
-    # 2. 分析配体-受体对（Nature风格）
+    # 2. analysisligand-receptor (Nature)
     if 'is_lr_pair' in gene_pairs_df.columns and gene_pairs_df['is_lr_pair'].any():
-        # 找出前15个高分配体-受体对（减少以提高可读性）
+        # before 15 ligand-receptor (can)
         top_lr_pairs = (gene_pairs_df[gene_pairs_df['is_lr_pair']]
                         .groupby(['lr_direction', 'interaction_type'])['attn_score']
                         .mean()
@@ -584,11 +565,11 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
         
         fig, ax = plt.subplots(figsize=(10, 7), facecolor='white')
         
-        # 准备数据
+        # prepared data
         lr_pairs = top_lr_pairs['lr_direction'].unique()
         x_pos = np.arange(len(lr_pairs))
         
-        # 分组绘制
+        # plot
         same_data = []
         diff_data = []
         for lr in lr_pairs:
@@ -599,14 +580,14 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
             same_data.append(same_val.values[0] if len(same_val) > 0 else 0)
             diff_data.append(diff_val.values[0] if len(diff_val) > 0 else 0)
         
-        # 绘制分组条形图
+        # plotplot
         width = 0.35
         ax.bar(x_pos - width/2, same_data, width, label='Same Cluster',
                color=nature_colors['same_cluster'], edgecolor='white', linewidth=1, alpha=0.9)
         ax.bar(x_pos + width/2, diff_data, width, label='Different Cluster',
                color=nature_colors['diff_cluster'], edgecolor='white', linewidth=1, alpha=0.9)
         
-        # 设置标签和标题
+        # and
         ax.set_xlabel('Ligand-Receptor Pair', fontsize=12, color='#2C3E50', fontweight='normal')
         ax.set_ylabel('Average Attention Score', fontsize=12, color='#2C3E50', fontweight='normal')
         ax.set_title('Top Ligand-Receptor Pairs in Boundary Interactions', 
@@ -614,11 +595,11 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
         ax.set_xticks(x_pos)
         ax.set_xticklabels(lr_pairs, rotation=45, ha='right', fontsize=9)
         
-        # 图例
+        # plot
         ax.legend(loc='upper right', frameon=True, edgecolor='#DDDDDD', 
                  fontsize=9, framealpha=1.0)
         
-        # 优化边框和网格
+        # Optimization and
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('#DDDDDD')
@@ -632,11 +613,11 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
         plt.savefig(lr_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
         plt.close()
         
-        print(f"配体-受体对分析已保存到: {lr_path}")
+        print(f"ligand-receptoranalysisSaved to : {lr_path}")
     
-    # 3. 热图：边界spot对每个基因对的注意力分布
+    # 3. plot:spot each gene pairs of
     try:
-        # 选择前15个最高注意力分数的基因对
+        # select before 15 of gene pairs
         top_gene_pairs = (gene_pairs_df
                         .groupby(['query_gene', 'key_gene'])['attn_score']
                         .mean()
@@ -644,8 +625,8 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
                         .sort_values('attn_score', ascending=False)
                         .head(15))
         
-        if len(top_gene_pairs) > 1:  # 需要至少2个基因对来绘制热图
-            # 创建交叉表：spot x gene_pair
+        if len(top_gene_pairs) > 1:  # 2 gene pairsplotplot
+            # createtable:spot x gene_pair
             pivot_data = []
             
             for _, row in top_gene_pairs.iterrows():
@@ -653,7 +634,7 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
                 k_gene = row['key_gene']
                 gene_pair = f"{q_gene}-{k_gene}"
                 
-                # 找到所有包含该基因对的行
+                # found all containsgene pairs of rows
                 pair_data = gene_pairs_df[
                     (gene_pairs_df['query_gene'] == q_gene) & 
                     (gene_pairs_df['key_gene'] == k_gene)
@@ -670,7 +651,7 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
             pivot_df = pd.DataFrame(pivot_data)
             
             if not pivot_df.empty:
-                # 透视为热图格式
+                # for plotformat
                 heatmap_data = pivot_df.pivot_table(
                     index='boundary_spot_idx', 
                     columns='gene_pair', 
@@ -679,33 +660,33 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
                     fill_value=0
                 )
                 
-                # 绘制热图（Nature风格）
+                # plotplot (Nature)
                 fig, ax = plt.subplots(figsize=(12, 8), facecolor='white')
                 
-                # 使用Nature友好的配色方案
+                # Nature of
                 im = ax.imshow(heatmap_data.values, cmap='viridis', aspect='auto', 
                               interpolation='nearest')
                 
-                # 设置刻度标签
+                # Note.
                 ax.set_xticks(np.arange(len(heatmap_data.columns)))
                 ax.set_yticks(np.arange(len(heatmap_data.index)))
                 ax.set_xticklabels(heatmap_data.columns, rotation=45, ha='right', fontsize=9)
                 ax.set_yticklabels(heatmap_data.index, fontsize=9)
                 
-                # 添加颜色条
+                # Note.
                 cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
                 cbar.set_label('Attention Score', fontsize=11, color='#2C3E50')
                 cbar.ax.tick_params(labelsize=9, colors='#2C3E50')
                 cbar.outline.set_edgecolor('#DDDDDD')
                 cbar.outline.set_linewidth(0.8)
                 
-                # 设置标签和标题
+                # and
                 ax.set_xlabel('Gene Pairs', fontsize=12, color='#2C3E50', fontweight='normal')
                 ax.set_ylabel('Boundary Spot Index', fontsize=12, color='#2C3E50', fontweight='normal')
                 ax.set_title('Gene Pair Attention Scores Across Boundary Spots', 
                            fontsize=13, fontweight='bold', color='#2C3E50', pad=15)
                 
-                # 优化边框
+                # Optimization
                 for spine in ax.spines.values():
                     spine.set_edgecolor('#DDDDDD')
                     spine.set_linewidth(0.8)
@@ -716,61 +697,59 @@ def plot_boundary_gene_interactions(gene_pairs_df: pd.DataFrame, coords_df: pd.D
                 plt.savefig(heatmap_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
                 plt.close()
                 
-                print(f"基因对热图已保存到: {heatmap_path}")
+                print(f"gene pairsplotSaved to : {heatmap_path}")
     except Exception as e:
-        print(f"绘制基因对热图时出错: {e}")
+        print(f"plotgene pairsplot: {e}")
     
-    print(f"边界交互统计已保存到: {count_path}")
+    print(f"saved to : {count_path}")
     return count_path
 
 def create_lr_dot_plot(gene_pairs_df: pd.DataFrame, coords_df: pd.DataFrame, output_dir: str):
-    """
-    创建配体-受体点图：显示不同聚类间的L-R交互
-    """
+    """ createligand-receptordot plot: different cluster of L-R """
     if gene_pairs_df.empty or 'is_lr_pair' not in gene_pairs_df.columns or not gene_pairs_df['is_lr_pair'].any():
-        print("警告: 无可用的配体-受体数据")
+        print("Warning: available of ligand-receptor")
         return None
     
-    print("创建配体-受体点图...")
+    print("createligand-receptordot plot...")
     
-    # 确保有聚类信息
+    # cluster information
     if 'cluster' not in coords_df.columns:
-        print("警告: 未找到聚类信息，无法创建聚类间配体-受体点图")
+        print("Warning: not foundcluster information,createclusterligand-receptordot plot")
         return None
     
-    # 仅保留配体-受体对
+    # ligand-receptor
     lr_pairs = gene_pairs_df[gene_pairs_df['is_lr_pair']].copy()
     
     if lr_pairs.empty:
-        print("警告: 数据中没有识别出配体-受体对")
+        print("Warning: in no ligand-receptor")
         return None
     
-    # 添加方向：从边界spot到邻居
+    # : from spot to
     lr_pairs['direction'] = lr_pairs.apply(
         lambda row: f"C{row['boundary_cluster']}→C{row['neighbor_cluster']}", 
         axis=1
     )
     
-    # 计算每个方向、每个L-R对的平均注意力分数
+    # compute each, each L-R of
     lr_avg = lr_pairs.groupby(['direction', 'lr_direction'])['attn_score'].agg(['mean', 'count']).reset_index()
     
-    # 找出每个方向中平均分数最高的前3个L-R对
+    # each in of before 3 L-R
     top_lr = []
     for direction, group in lr_avg.groupby('direction'):
         top_in_direction = group.nlargest(3, 'mean')
         top_lr.append(top_in_direction)
     
     if not top_lr:
-        print("警告: 无法找到顶级配体-受体对")
+        print("Warning: found ligand-receptor")
         return None
     
     top_lr_df = pd.concat(top_lr)
     
-    # 准备点图数据
+    # dot plot
     all_directions = top_lr_df['direction'].unique()
     all_lr_pairs = top_lr_df['lr_direction'].unique()
     
-    # 创建点图矩阵
+    # createdot plot
     dot_matrix = np.zeros((len(all_directions), len(all_lr_pairs)))
     size_matrix = np.zeros((len(all_directions), len(all_lr_pairs)))
     
@@ -783,10 +762,10 @@ def create_lr_dot_plot(gene_pairs_df: pd.DataFrame, coords_df: pd.DataFrame, out
         dot_matrix[i, j] = row['mean']
         size_matrix[i, j] = row['count']
     
-    # 绘制点图
+    # plotdot plot
     plt.figure(figsize=(14, len(all_directions) * 0.6 + 2))
     
-    # 归一化大小矩阵
+    # size
     min_size, max_size = 50, 400
     if size_matrix.max() > size_matrix.min():
         norm_size = min_size + (max_size - min_size) * (size_matrix - size_matrix.min()) / (size_matrix.max() - size_matrix.min())
@@ -806,13 +785,13 @@ def create_lr_dot_plot(gene_pairs_df: pd.DataFrame, coords_df: pd.DataFrame, out
                     linewidth=1
                 )
     
-    # 添加颜色条
+    # Note.
     norm = Normalize(vmin=dot_matrix[dot_matrix > 0].min(), vmax=dot_matrix.max())
     sm = ScalarMappable(cmap='viridis', norm=norm)
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=plt.gca(), label='Average Attention Score')
     
-    # 设置坐标轴
+    # Note.
     plt.yticks(range(len(all_directions)), all_directions)
     plt.xticks(range(len(all_lr_pairs)), all_lr_pairs, rotation=90)
     
@@ -822,28 +801,28 @@ def create_lr_dot_plot(gene_pairs_df: pd.DataFrame, coords_df: pd.DataFrame, out
     plt.grid(True, linestyle='--', alpha=0.3)
     plt.tight_layout()
     
-    # 保存图像
+    # Saveimage
     output_path = os.path.join(output_dir, 'ligand_receptor_dot_plot.png')
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"配体-受体点图已保存到: {output_path}")
+    print(f"ligand-receptordot plotSaved to : {output_path}")
     return output_path
 
-# ============= 分析结果缓存函数 =============
+# ============= analysiscache =============
 def save_analysis_results(output_dir: str, spot_to_spot: pd.DataFrame, boundary_spots: List[int], 
                          cross_cluster_ratio: Dict[int, float], flow_vectors: Dict[int, Dict], 
                          gene_pairs_df: pd.DataFrame):
-    """保存分析结果到文件"""
+    """Saveanalysis to file"""
     analysis_dir = os.path.join(output_dir, 'analysis_cache')
     os.makedirs(analysis_dir, exist_ok=True)
     
-    print("保存分析结果...")
+    print("Saveanalysis...")
     
-    # 保存spot-to-spot注意力
+    # Savespot-to-spot
     spot_to_spot.to_csv(os.path.join(analysis_dir, 'spot_to_spot_attention.csv'), index=False)
     
-    # 保存边界spots信息（转换为可序列化格式）
+    # Save boundary spots (for can columnformat)
     boundary_data = {
         'boundary_spots': [int(x) for x in boundary_spots],
         'cross_cluster_ratio': {int(k): float(v) for k, v in cross_cluster_ratio.items()}
@@ -851,7 +830,7 @@ def save_analysis_results(output_dir: str, spot_to_spot: pd.DataFrame, boundary_
     with open(os.path.join(analysis_dir, 'boundary_spots.json'), 'w') as f:
         json.dump(boundary_data, f, indent=2)
     
-    # 保存流向量（转换为可序列化格式）
+    # save (for can columnformat)
     flow_vectors_serializable = {}
     for spot_idx, data in flow_vectors.items():
         flow_vectors_serializable[str(spot_idx)] = {
@@ -865,33 +844,33 @@ def save_analysis_results(output_dir: str, spot_to_spot: pd.DataFrame, boundary_
     with open(os.path.join(analysis_dir, 'flow_vectors.json'), 'w') as f:
         json.dump(flow_vectors_serializable, f, indent=2)
     
-    # 保存基因对数据
+    # Save gene pairs
     if not gene_pairs_df.empty:
         gene_pairs_df.to_csv(os.path.join(analysis_dir, 'boundary_gene_pairs.csv'), index=False)
     
-    print(f"分析结果已保存到: {analysis_dir}")
+    print(f"analysisSaved to : {analysis_dir}")
     return analysis_dir
 
 def load_analysis_results(output_dir: str):
-    """从文件加载分析结果"""
+    """ from fileloadanalysis"""
     analysis_dir = os.path.join(output_dir, 'analysis_cache')
     
     if not os.path.exists(analysis_dir):
         return None
     
-    print("加载缓存的分析结果...")
+    print("loadCache of analysis...")
     
     try:
-        # 加载spot-to-spot注意力
+        # loadspot-to-spot
         spot_to_spot = pd.read_csv(os.path.join(analysis_dir, 'spot_to_spot_attention.csv'))
         
-        # 加载边界spots信息
+        # load boundary spots
         with open(os.path.join(analysis_dir, 'boundary_spots.json'), 'r') as f:
             boundary_data = json.load(f)
         boundary_spots = boundary_data['boundary_spots']
         cross_cluster_ratio = boundary_data['cross_cluster_ratio']
         
-        # 加载流向量
+        # load
         with open(os.path.join(analysis_dir, 'flow_vectors.json'), 'r') as f:
             flow_vectors_data = json.load(f)
         
@@ -906,14 +885,14 @@ def load_analysis_results(output_dir: str):
                 'target_position': tuple(data['target_position'])
             }
         
-        # 加载基因对数据
+        # load gene pairs
         gene_pairs_path = os.path.join(analysis_dir, 'boundary_gene_pairs.csv')
         if os.path.exists(gene_pairs_path):
             gene_pairs_df = pd.read_csv(gene_pairs_path)
         else:
             gene_pairs_df = pd.DataFrame()
         
-        print("分析结果加载成功！")
+        print("analysisloadsuccessful！")
         return {
             'spot_to_spot': spot_to_spot,
             'boundary_spots': boundary_spots,
@@ -923,52 +902,50 @@ def load_analysis_results(output_dir: str):
         }
     
     except Exception as e:
-        print(f"加载分析结果时出错: {e}")
+        print(f"loadanalysis: {e}")
         return None
 
-# ============= 主函数 =============
+# ============= =============
 def main(data_dir: str, output_dir: str = None, force_recompute: bool = False):
-    """
-    主函数：加载数据并执行所有分析和可视化
-    """
-    # 创建输出目录
+    """ :loadrows all analysis and can """
+    # createOutput directory
     if output_dir is None:
         output_dir = os.path.join(data_dir, 'visualizations')
     os.makedirs(output_dir, exist_ok=True)
     
-    print(f"数据目录: {data_dir}")
-    print(f"输出目录: {output_dir}")
+    print(f"Data directory: {data_dir}")
+    print(f"Output directory: {output_dir}")
     
-    # 尝试加载缓存的分析结果
+    # load cache of analysis
     analysis_results = None
     if not force_recompute:
         analysis_results = load_analysis_results(output_dir)
     
     if analysis_results is None:
-        print("执行完整分析...")
+        print("rowsanalysis...")
         
-        # 加载数据
+        # load
         data = load_data(data_dir)
         attn_df = data['attn_df']
         coords_df = data['coords_df']
         lr_df = data.get('lr_df', None)
         
-        print(f"读取了{len(attn_df)}条注意力数据记录和{len(coords_df)}个空间坐标")
+        print(f"reading{len(attn_df)}attention data and {len(coords_df)} spatial coordinates")
         
-        # 1. 计算Spot-to-Spot注意力
-        print("计算Spot-to-Spot注意力...")
+        # 1. Computing spot-to-spot attention
+        print("Computing spot-to-spot attention...")
         spot_to_spot = prepare_spot_to_spot_attention(attn_df)
         
-        # 2. 识别边界spots
-        print("识别边界spots...")
+        # 2. Identifying boundary spots
+        print("Identifying boundary spots...")
         boundary_spots, cross_cluster_ratio = identify_boundary_spots(coords_df, spot_to_spot)
-        print(f"边界spots: {boundary_spots}")
-        print(f"跨聚类比例: {cross_cluster_ratio}")
+        print(f"boundary spots: {boundary_spots}")
+        print(f"cluster: {cross_cluster_ratio}")
         # INSERT_YOUR_CODE
         import json
         boundary_spots_path = os.path.join(output_dir, 'boundary_spots.json')
         with open(boundary_spots_path, 'w', encoding='utf-8') as f:
-            # 转换NumPy类型为Python原生类型以确保JSON序列化
+            # Num Py for Python JSONcolumn
             boundary_spots_serializable = [int(x) for x in boundary_spots]
             cross_cluster_ratio_serializable = {int(k): float(v) for k, v in cross_cluster_ratio.items()}
             
@@ -976,21 +953,21 @@ def main(data_dir: str, output_dir: str = None, force_recompute: bool = False):
                 "boundary_spots": boundary_spots_serializable,
                 "cross_cluster_ratio": cross_cluster_ratio_serializable
             }, f, ensure_ascii=False, indent=2)
-        print(f"已保存boundary_spots到: {boundary_spots_path}")
+        print(f"Savedboundary_spots to : {boundary_spots_path}")
         
-        # 3. 计算注意力流向量
-        print("计算注意力流向量...")
+        # 3. Computing attention flow vectors
+        print("Computing attention flow vectors...")
         flow_vectors = find_attention_flow_vectors(spot_to_spot, coords_df)
         
-        # 4. 如果有边界spots，分析其基因对
+        # 4. if boundary spots,analysisgene pairs
         if boundary_spots:
-            print("分析边界spots的基因对...")
+            print("analysisboundary spots of gene pairs...")
             gene_pairs_df = find_gene_pairs_for_boundary_spots(attn_df, boundary_spots, coords_df, lr_df)
         else:
             gene_pairs_df = pd.DataFrame()
-            print("警告: 未找到边界spots，跳过基因对分析")
+            print("Warning: not foundboundary spots,Skippinggene pairsanalysis")
         
-        # 保存分析结果
+        # Saveanalysis
         save_analysis_results(output_dir, spot_to_spot, boundary_spots, cross_cluster_ratio, flow_vectors, gene_pairs_df)
         
         analysis_results = {
@@ -1001,46 +978,44 @@ def main(data_dir: str, output_dir: str = None, force_recompute: bool = False):
             'gene_pairs_df': gene_pairs_df
         }
     else:
-        print("使用缓存的分析结果")
-        # 重新加载坐标数据用于可视化
+        print("cache of analysis")
+        # load for can
         data = load_data(data_dir)
         coords_df = data['coords_df']
     
-    # 执行可视化
-    print("\n开始生成可视化...\n")
+    # rows can
+    print("\n Start can...\n")
     
-    # 5.1 空间交互网络
+    # 5.1
     plot_spatial_interaction_network(coords_df, analysis_results['spot_to_spot'], 
                                    analysis_results['boundary_spots'], 
                                    analysis_results['cross_cluster_ratio'], output_dir)
     
-     # 5.2 注意力流向量场
+     # 5.2
     plot_attention_flow_vectors(coords_df, analysis_results['flow_vectors'], output_dir)
-    # 5.3 边界基因交互
+    # 5.3 gene interactions
     if not analysis_results['gene_pairs_df'].empty:
         plot_boundary_gene_interactions(analysis_results['gene_pairs_df'], coords_df, output_dir)
         
-        # 5.4 配体-受体点图
+        # 5.4 ligand-receptordot plot
         create_lr_dot_plot(analysis_results['gene_pairs_df'], coords_df, output_dir)
     
-    print(f"\n所有分析和可视化已完成！结果保存在: {output_dir}")
+    print(f"\n all analysis and can completed！save in : {output_dir}")
     return output_dir
 
 
 def plot_attention_flow_vectors(coords_df: pd.DataFrame, flow_vectors: Dict[int, Dict], output_dir: str):
-    """
-    绘制注意力流向量场（Nature风格）
-    """
-    print("绘制注意力流向量场...")
+    """ plot (Nature) """
+    print("plot...")
     
-    # Nature配色方案
-    nature_cmap = plt.cm.get_cmap('Set3')  # 柔和的离散色
+    # Nature
+    nature_cmap = plt.cm.get_cmap('Set3')  # and of
     
     fig, ax = plt.subplots(figsize=(14, 12), facecolor='white')
     
-    # 绘制所有spots（更优雅的样式）
+    # plot all spots (of)
     if 'cluster' in coords_df.columns:
-        # 确保有数值化的聚类标签
+        # of cluster
         if coords_df['cluster'].dtype == 'object' and 'cluster_num' not in coords_df.columns:
             unique_clusters = coords_df['cluster'].unique()
             cluster_to_num = {cluster: i for i, cluster in enumerate(unique_clusters)}
@@ -1052,7 +1027,7 @@ def plot_attention_flow_vectors(coords_df: pd.DataFrame, flow_vectors: Dict[int,
             alpha=0.6, s=40, edgecolors='white', linewidths=0.5
         )
         
-        # 添加颜色条
+        # Note.
         cbar = plt.colorbar(scatter, ax=ax, fraction=0.046, pad=0.04)
         cbar.set_label('Cluster', fontsize=11, color='#2C3E50')
         cbar.ax.tick_params(labelsize=9, colors='#2C3E50')
@@ -1064,7 +1039,7 @@ def plot_attention_flow_vectors(coords_df: pd.DataFrame, flow_vectors: Dict[int,
             c='#CCCCCC', alpha=0.6, s=40, edgecolors='white', linewidths=0.5
         )
     
-    # 提取位置和方向向量
+    # and
     positions = []
     directions = []
     magnitudes = []
@@ -1074,27 +1049,27 @@ def plot_attention_flow_vectors(coords_df: pd.DataFrame, flow_vectors: Dict[int,
         directions.append(data['direction'])
         magnitudes.append(data['magnitude'])
     
-    # 转换为NumPy数组
+    # for Num Py
     positions = np.array(positions)
     directions = np.array(directions)
     magnitudes = np.array(magnitudes)
     
-    # 归一化箭头长度，使其适合可视化
+    # , can
     max_magnitude = magnitudes.max() if len(magnitudes) > 0 else 1
     norm = Normalize(vmin=0, vmax=max_magnitude)
     
-    # 计算合适的缩放比例
+    # compute of
     x_range = coords_df['x'].max() - coords_df['x'].min()
     y_range = coords_df['y'].max() - coords_df['y'].min()
     scale_factor = min(x_range, y_range) * 0.03 / max_magnitude
     
-    # 绘制箭头（Nature风格：更优雅的配色和样式）
-    arrow_cmap = plt.cm.get_cmap('YlOrRd')  # 黄橙红渐变，更适合Nature风格
+    # plot (Nature: of and)
+    arrow_cmap = plt.cm.get_cmap('YlOrRd')  # ,Nature
     
     for i in range(len(positions)):
         color = arrow_cmap(norm(magnitudes[i]))
         
-        # 绘制箭头（更精细的样式）
+        # plot (of)
         ax.arrow(
             positions[i][0], positions[i][1],
             directions[i][0] * scale_factor, directions[i][1] * scale_factor,
@@ -1104,7 +1079,7 @@ def plot_attention_flow_vectors(coords_df: pd.DataFrame, flow_vectors: Dict[int,
             length_includes_head=True, zorder=3
         )
     
-    # 添加颜色条（优化样式）
+    # (Optimization)
     sm = ScalarMappable(cmap='YlOrRd', norm=norm)
     sm.set_array([])
     cbar2 = plt.colorbar(sm, ax=ax, fraction=0.046, pad=0.04)
@@ -1113,82 +1088,82 @@ def plot_attention_flow_vectors(coords_df: pd.DataFrame, flow_vectors: Dict[int,
     cbar2.outline.set_edgecolor('#DDDDDD')
     cbar2.outline.set_linewidth(0.8)
     
-    # 设置标签和标题
+    # and
     ax.set_xlabel('X Coordinate', fontsize=12, color='#2C3E50', fontweight='normal')
     ax.set_ylabel('Y Coordinate', fontsize=12, color='#2C3E50', fontweight='normal')
     ax.set_title('Spatial Attention Flow Vector Field', 
                 fontsize=13, fontweight='bold', color='#2C3E50', pad=15)
     
-    # 优化边框
+    # Optimization
     for spine in ax.spines.values():
         spine.set_edgecolor('#DDDDDD')
         spine.set_linewidth(0.8)
     
-    # 添加网格
+    # Note.
     ax.grid(True, linestyle='--', alpha=0.2, color='#E5E5E5', zorder=0)
     ax.set_axisbelow(True)
     
     plt.tight_layout()
     
-    # 保存图像
+    # Saveimage
     output_path = os.path.join(output_dir, 'attention_flow_vectors.png')
     plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
     plt.close()
     
-    # 可选：绘制流场密度图（Nature风格）
+    # optional:plotplot (Nature)
     try:
         fig, ax = plt.subplots(figsize=(14, 12), facecolor='white')
         
-        # 绘制所有spots（淡背景）
+        # plot all spots ()
         ax.scatter(
             coords_df['x'], coords_df['y'],
             c='#E8E8E8', alpha=0.4, s=25, edgecolors='none', zorder=1
         )
         
-        # 创建网格
+        # create
         x = np.linspace(coords_df['x'].min(), coords_df['x'].max(), 100)
         y = np.linspace(coords_df['y'].min(), coords_df['y'].max(), 100)
         X, Y = np.meshgrid(x, y)
         
-        # 准备插值数据
+        # Note.
         points = positions
         values_x = np.array([d[0] for d in directions]) * scale_factor
         values_y = np.array([d[1] for d in directions]) * scale_factor
         
-        if len(points) >= 4:  # 需要至少4个点进行插值
-            # 使用径向基函数进行插值
+        if len(points) >= 4:  # 4 perform
+            # perform
             grid_x = griddata(points, values_x, (X, Y), method='cubic', fill_value=0)
             grid_y = griddata(points, values_y, (X, Y), method='cubic', fill_value=0)
             
-            # 计算流场强度
+            # compute
             speed = np.sqrt(grid_x**2 + grid_y**2)
             
-            # 绘制流线（使用Nature友好的配色）
+            # plot (Nature of)
             streamplot = ax.streamplot(
                 X, Y, grid_x, grid_y,
                 density=1.5, color=speed, cmap='YlOrRd',
                 linewidth=1.2, arrowsize=1.0, zorder=2
             )
             
-            # 添加颜色条
+            # Note.
             cbar = plt.colorbar(streamplot.lines, ax=ax, fraction=0.046, pad=0.04)
             cbar.set_label('Flow Intensity', fontsize=11, color='#2C3E50')
             cbar.ax.tick_params(labelsize=9, colors='#2C3E50')
             cbar.outline.set_edgecolor('#DDDDDD')
             cbar.outline.set_linewidth(0.8)
             
-            # 设置标签和标题
+            # and
             ax.set_xlabel('X Coordinate', fontsize=12, color='#2C3E50', fontweight='normal')
             ax.set_ylabel('Y Coordinate', fontsize=12, color='#2C3E50', fontweight='normal')
             ax.set_title('Attention Flow Density Visualization', 
                         fontsize=13, fontweight='bold', color='#2C3E50', pad=15)
             
-            # 优化边框
+            # Optimization
             for spine in ax.spines.values():
                 spine.set_edgecolor('#DDDDDD')
                 spine.set_linewidth(0.8)
             
-            # 添加淡网格
+            # Note.
             ax.grid(True, linestyle='--', alpha=0.2, color='#E5E5E5', zorder=0)
             ax.set_axisbelow(True)
             
@@ -1198,70 +1173,70 @@ def plot_attention_flow_vectors(coords_df: pd.DataFrame, flow_vectors: Dict[int,
             plt.savefig(density_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
             plt.close()
             
-            print(f"流场密度图已保存到: {density_path}")
+            print(f"plotSaved to : {density_path}")
     except Exception as e:
-        print(f"绘制流场密度图时出错: {e}")
+        print(f"plotplot: {e}")
     
-    print(f"注意力流向量场图已保存到: {output_path}")
+    print(f"plotSaved to : {output_path}")
     return output_path
 
 def load_whole_slice_data(data_dir: str) -> Dict[str, Any]:
-    """加载全切片数据（优化版本）"""
+    """load (Optimization)"""
     data = {}
     
-    # 首先读取配置文件以获取路径信息
+    # reading Configuration file path
     config_file = os.path.join(data_dir, "export_config.json")
     if os.path.exists(config_file):
         with open(config_file, 'r') as f:
             config = json.load(f)
         
-        # 使用配置中的路径
+        # in of path
         data['config'] = config
         
-        # 加载优化的数据结构
+        # loadOptimization of
         if 'optimized_paths' in config:
             paths = config['optimized_paths']
             
-            # Spot-to-Spot注意力
+            # Spot-to-Spot
             if os.path.exists(paths['spot_to_spot']):
                 data['spot_to_spot'] = pd.read_parquet(paths['spot_to_spot'])
             
-            # 基因对注意力
+            # gene pairs
             if os.path.exists(paths['gene_pairs']):
                 data['gene_pairs'] = pd.read_parquet(paths['gene_pairs'])
             
-            # 空间邻居
+            # Note.
             if os.path.exists(paths['neighbors']):
                 data['spot_neighbors'] = pd.read_pickle(paths['neighbors'])
         
-        # 加载空间坐标
+        # loadspatial coordinates
         if 'coords_path' in config and os.path.exists(config['coords_path']):
             data['coords_df'] = pd.read_csv(config['coords_path'])
         
-        # 加载AnnData
+        # loadAnnData
         if 'adata_path' in config and os.path.exists(config['adata_path']):
             data['adata'] = sc.read_h5ad(config['adata_path'])
         
-        # 加载配体-受体数据库
+        # loadligand-receptordatabase
         if 'lr_db_path' in config and os.path.exists(config['lr_db_path']):
             data['lr_df'] = pd.read_csv(config['lr_db_path'])
     else:
-        # 无配置文件时的备用加载方式
-        print("警告: 未找到配置文件，使用备用加载方式")
+        # Configuration file of load
+        print("Warning: not found Configuration file,load")
         
-        # 找到注意力数据
+        #  found attention data
         parquet_files = [f for f in os.listdir(data_dir) if f.endswith('.parquet') and 'whole_slice' in f]
         if parquet_files:
             attn_path = os.path.join(data_dir, parquet_files[0])
             data['attn_df'] = pd.read_parquet(attn_path)
         else:
-            # 尝试CSV
+            # CSV
             csv_files = [f for f in os.listdir(data_dir) if f.endswith('.csv') and 'whole_slice' in f]
             if csv_files:
                 attn_path = os.path.join(data_dir, csv_files[0])
                 data['attn_df'] = pd.read_csv(attn_path)
         
-        # 空间坐标
+        # spatial coordinates
         coords_files = [f for f in os.listdir(data_dir) if 'coordinates' in f and f.endswith('.csv')]
         if coords_files:
             data['coords_df'] = pd.read_csv(os.path.join(data_dir, coords_files[0]))
@@ -1271,34 +1246,34 @@ def load_whole_slice_data(data_dir: str) -> Dict[str, Any]:
         if h5ad_files:
             data['adata'] = sc.read_h5ad(os.path.join(data_dir, h5ad_files[0]))
         
-        # 配体-受体数据库
+        # ligand-receptordatabase
         lr_files = [f for f in os.listdir(data_dir) if 'lr_database' in f]
         if lr_files:
             data['lr_df'] = pd.read_csv(os.path.join(data_dir, lr_files[0]))
     
-    # 如果没有优化的spot_to_spot，但有原始注意力数据，则计算它
+    # if no Optimization of spot_to_spot,attention data,compute
     if 'spot_to_spot' not in data and 'attn_df' in data:
-        print("计算Spot-to-Spot注意力...")
+        print("Computing spot-to-spot attention...")
         attn_df = data['attn_df']
         spot_to_spot = attn_df.groupby(['center_global_idx', 'neighbor_global_idx'])['attn_sum_norm'].sum().reset_index()
         spot_to_spot.columns = ['source_idx', 'target_idx', 'attention_weight']
         data['spot_to_spot'] = spot_to_spot
     
-    # 报告加载的数据
-    print("已加载以下数据:")
+    # load of
+    print("load:")
     for key in data.keys():
         if key == 'attn_df':
-            print(f"  - 注意力数据: {len(data[key])}行")
+            print(f"  - attention data: {len(data[key])}rows")
         elif key == 'coords_df':
-            print(f"  - 空间坐标: {len(data[key])}个spots")
+            print(f"  - spatial coordinates: {len(data[key])} spots")
         elif key == 'spot_to_spot':
-            print(f"  - Spot-to-Spot注意力: {len(data[key])}个连接")
+            print(f" - Spot-to-Spot: {len(data[key])} ")
         elif key == 'gene_pairs':
-            print(f"  - 基因对注意力: {len(data[key])}个基因对")
+            print(f" - gene pairs: {len(data[key])} gene pairs")
         elif key == 'adata':
-            print(f"  - AnnData: {data[key].n_obs}个spots, {data[key].n_vars}个基因")
+            print(f"  - AnnData: {data[key].n_obs} spots, {data[key].n_vars}genes")
         elif key == 'lr_df':
-            print(f"  - 配体-受体数据库: {len(data[key])}个L-R对")
+            print(f" - ligand-receptordatabase: {len(data[key])} L-R")
     
     return data
 
@@ -1315,11 +1290,4 @@ if __name__ == "__main__":
 
 
 
-"""
-# 如果需要重新分析
-python spatial_attention_visualizer.py \
-    --data_dir ./whole_slice_data_20251010_193054 \
-    --output_dir ./whole_slice_data_20251010_193054/visualizations \
-    --force_recompute
-
-"""
+""" # if analysis python spatial_attention_visualizer.py \ --data_dir./whole_slice_data_20251010_193054 \ --output_dir./whole_slice_data_20251010_193054/visualizations \ --force_recompute """

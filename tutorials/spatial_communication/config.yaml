@@ -1,36 +1,21 @@
-# CoseNiche 空间通讯分析配置
+# CoseNiche spatial communication analysis configuration
 
-# ============== 数据集配置 ==============
 dataset:
   name: "PDAC"
-  
-  # 输入路径
   base_dir: "/home/junning/projectnvme/ST/project-20-contrast-organ/Inference_embeddings/PDAC/PDAC_clsrecon_nosemantic_fintuneembedding_cls2genes_submodel"
   h5ad_path: "/home/junning/projectnvme/ST/Data/PDAC/pdac.h5ad"
   truth_path: "/home/junning/projectnvme/ST/Data/PDAC/PDAC_truth.csv"
   vocab_path: "/home/junning/projectnvme/ST/Data/Get_Embedding/vocab.json"
-  
-  # 注意力数据文件名
   attn_scores_file: "context_attention_scores.pkl"
-  spatial_attn_file: "spatial_attention_scores.pkl"  # 如果有的话
+  spatial_attn_file: "spatial_attention_scores.pkl"
 
-# ============== 分析参数 ==============
 analysis:
-  # 使用的注意力层
   use_layer: 5
-  
-  # 批处理大小
   batch_size: 50
-  
-  # Top-K
   top_k: 20
 
-# ============== 基因过滤规则 ==============
 gene_filtering:
-  # 是否过滤含点号或横杠的基因
   drop_with_dot_or_dash: true
-  
-  # 前缀黑名单
   extra_exclude_prefixes:
     - "AC"
     - "AL"
@@ -38,130 +23,62 @@ gene_filtering:
     - "RP"
     - "SNOR"
     - "SCARNA"
-  
-  # 自定义正则排除（可选）
   extra_exclude_regex: null
 
-# ============== 输出设置 ==============
 output:
-  # 主输出目录
   output_dir: "./attention_exports"
-  
-  # 子目录
   coords_file: "spatial_coords.csv"
   attention_file: "attention_layer{layer}.csv"
   optimized_file: "optimized_structures.pkl"
-  
-  # 边界分析输出
   boundary_dir: "./boundary_analysis"
-  
-  # 极坐标图输出
   polar_dir: "./polar_plots"
 
-# ============== 极坐标分析参数 ==============
 polar:
-  # 聚合级别
   levels:
-    - "spot"          # Spot 级别
-    - "domain_neigh"  # Domain 邻居级别
-    - "domain_global" # Domain 全局级别
-  
-  # Top-K
+    - "spot"
+    - "domain_neigh"
+    - "domain_global"
   topk: 10
-  
-  # Value 列
   value_col: "attn_score"
-  
-  # 块大小（用于流式读取）
   chunksize: 2000000
-  
-  # Domain-aware 参数
   domain_aware:
     enabled: false
-    domain_weight: 0.6  # 0.6 表示域内权重，0.4 表示跨域权重
-    metric: "mean"      # mean 或 sum
-  
-  # 基因视角
-  gene_view: "kv"  # "kv" 或 "q"
+    domain_weight: 0.6
+    metric: "mean"
+  gene_view: "kv"
 
-# ============== 边界分析参数 ==============
 boundary:
-  # 边界识别阈值
   threshold: 0.3
-  
-  # 百分位阈值（用于网络可视化）
   percentile_threshold: 60
-  
-  # 配体-受体数据库
-  lr_database: null  # 路径到 L-R 数据库 CSV，null 表示不使用
+  lr_database: null
   lr_score_threshold: 0.5
-  
-  # 是否强制重新计算
   force_recompute: false
 
-# ============== 可视化参数 ==============
 visualization:
-  # 极坐标图
   polar_plot:
     figsize: [8, 8]
     dpi: 300
     cmap: "viridis"
     marker_size: 50
     alpha: 0.6
-  
-  # 边界网络图
   boundary_network:
     figsize: [12, 10]
     dpi: 300
     node_size_range: [50, 500]
     edge_width_range: [0.5, 3.0]
     alpha: 0.7
-  
-  # L-R 点图
   lr_dotplot:
     figsize: [10, 8]
     dpi: 300
     top_pairs: 30
     min_score: 0.1
 
-# ============== 数据检查参数 ==============
-data_check:
-  # 检查项目
-  checks:
-    - "files_exist"
-    - "attention_format"
-    - "spatial_coords"
-    - "cluster_info"
-    - "marker_genes"
-  
-  # 必需的文件
-  required_files:
-    - "context_attention_scores.pkl"
-    - "context_genes.pkl"
-  
-  # 可选的文件
-  optional_files:
-    - "spatial_attention_scores.pkl"
-    - "updated_embeddings.npy"
-
-# ============== 高级选项 ==============
 advanced:
-  # 并行处理
-  n_jobs: 1  # -1 表示使用所有核心
-  
-  # 内存优化
+  n_jobs: 1
   low_memory: false
-  
-  # 缓存
   use_cache: true
   cache_dir: "./.cache"
-  
-  # 日志
-  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"
   log_file: "./spatial_analysis.log"
-  
-  # 进度条
   show_progress: true
-  
-  # 保存格式
-  save_format: "csv"  # csv, parquet, feather
+  save_format: "csv"
